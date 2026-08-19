@@ -1,0 +1,28 @@
+<input type="file" id="midiFile" accept=".middt,.txt">
+
+<pre id="preview">No file selected.</pre>
+
+<script>
+    const input = document.getElementById("midiFile");
+    const preview = document.getElementById("preview");
+
+    input.addEventListener("change", async () => {
+        const file = input.files[0];
+
+        if (!file) {
+            preview.textContent = "No file selected.";
+            return;
+        }
+
+        const text = await file.text();
+
+        const firstLines = text
+            .split(/\r?\n/)
+            .slice(0, 12)
+            .join("\n");
+
+        preview.textContent =
+            "File: " + file.name + "\n\n" +
+            firstLines;
+    });
+</script>
