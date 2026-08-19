@@ -36,6 +36,7 @@
             font-size: 18px;
             padding: 10px 18px;
             margin-top: 10px;
+            margin-right: 8px;
         }
 
         pre {
@@ -43,34 +44,75 @@
             padding: 12px;
             white-space: pre-wrap;
             overflow-wrap: anywhere;
-            max-height: 500px;
+            max-height: 400px;
             overflow-y: auto;
         }
 
         #status {
             font-size: 18px;
+            margin-bottom: 8px;
+        }
+
+        .good {
+            color: #69d36f;
+        }
+
+        .bad {
+            color: #ff6b6b;
+        }
+
+        .value {
+            font-family: monospace;
         }
     </style>
 </head>
 
 <body>
 
-    <div id="revision">REV 1</div>
+    <div id="revision">REV 2</div>
 
     <h1>Patchworld MIDI Importer</h1>
 
     <div class="section">
         <div>
+            <span class="label">Bridge:</span>
+            <span id="bridgeStatus">Waiting...</span>
+        </div>
+
+        <div>
+            <span class="label">Wireless:</span>
+            <span id="wirelessStatus">Not subscribed</span>
+        </div>
+
+        <div>
             <span class="label">Source:</span>
             test_fourths_2chan.middt
         </div>
-
-        <button id="loadButton">Load and Parse MIDI Text</button>
     </div>
 
 
     <div class="section">
-        <div id="status">Not loaded.</div>
+
+        <button id="loadButton">
+            Load and Parse MIDI Text
+        </button>
+
+        <button id="importButton" disabled>
+            Start Import
+        </button>
+
+        <button id="abortButton" disabled>
+            Abort
+        </button>
+
+    </div>
+
+
+    <div class="section">
+
+        <div id="status">
+            Waiting.
+        </div>
 
         <div>
             <span class="label">Playable events:</span>
@@ -78,32 +120,161 @@
         </div>
 
         <div>
-            <span class="label">Accumulated duration:</span>
+            <span class="label">Duration:</span>
             <span id="duration">-</span>
         </div>
+
+        <div>
+            <span class="label">Writes required:</span>
+            <span id="writesRequired">-</span>
+        </div>
+
     </div>
 
 
     <div class="section">
-        <div class="label">First parsed events:</div>
-        <pre id="preview">No data yet.</pre>
+
+        <div>
+            <span class="label">Current write:</span>
+            <span id="currentWrite" class="value">-</span>
+        </div>
+
+        <div>
+            <span class="label">Completed writes:</span>
+            <span id="completedWrites">0</span>
+        </div>
+
+        <div>
+            <span class="label">ACKs:</span>
+            <span id="ackCount" class="good">0</span>
+        </div>
+
+        <div>
+            <span class="label">NAKs:</span>
+            <span id="nakCount" class="bad">0</span>
+        </div>
+
+        <div>
+            <span class="label">Retries:</span>
+            <span id="retryCount">0</span>
+        </div>
+
     </div>
+
+
+    <div class="section">
+        <div class="label">Parsed event preview:</div>
+        <pre id="preview">No MIDI loaded yet.</pre>
+    </div>
+
+
+    <!--
+        Load Patchworld bridge with cache-busting timestamp.
+    -->
+    <script>
+        document.write(
+            '<script src="patchworld-bridge.js?t=' +
+            Date.now() +
+            '"><\/script>'
+        );
+    </script>
 
 
     <script>
 
-        const MIDI_FILENAME = "test_fourths_2chan.middt";
+        // =========================================================
+        // CONFIGURATION
+        // =========================================================
+
+        const MIDI_FILENAME =
+            "test_fourths_2chan.middt";
+
+
+        const CHANNELS = {
+
+            time: {
+                index: "midi_time_index",
+                value: "midi_time_value"
+            },
+
+            type: {
+                index: "midi_type_index",
+                value: "midi_type_value"
+            },
+
+            note: {
+                index: "midi_note_index",
+                value: "midi_note_value"
+            },
+
+            velocity: {
+                index: "midi_velocity_index",
+                value: "midi_velocity_value"
+            },
+
+            channel: {
+                index: "midi_channel_index",
+                value: "midi_channel_value"
+            },
+
+            ack: "midi_ack",
+
+            nak: "midi_nak"
+        };
+
+
+        const FIELD_ORDER = [
+            "time",
+            "type",
+            "note",
+            "velocity",
+            "channel"
+        ];
+
+
+        const MAX_RETRIES = 5;
+
+        // Give Patchworld plenty of time before regarding
+        // absence of ACK/NAK as a failed write.
+        const ACK_TIMEOUT_MS = 2000;
+
+
+        // =========================================================
+        // STATE
+        // =========================================================
 
         let parsedEvents = [];
 
+        let bridgeReady = false;
 
-        // ---------------------------------------------------------
-        // Extract the time= value from ANY MIDI text line.
-        //
-        // This is deliberately independent of whether the line
-        // represents an event that Patchworld will eventually use.
-        // Every delta time contributes to absolute elapsed time.
-        // ---------------------------------------------------------
+        let wirelessReady = false;
+
+        let importing = false;
+
+        let abortRequested = false;
+
+        let currentEventIndex = 0;
+
+        let currentFieldIndex = 0;
+
+        let completedWrites = 0;
+
+        let ackCount = 0;
+
+        let nakCount = 0;
+
+        let retryCount = 0;
+
+        let retryForCurrentWrite = 0;
+
+        let waitingForResponse = false;
+
+        let responseTimer = null;
+
+
+        // =========================================================
+        // MIDI PARSER
+        // =========================================================
 
         function extractDeltaTime(line) {
 
@@ -117,52 +288,41 @@
 
             const value = Number(match[1]);
 
-            return Number.isFinite(value) ? value : 0;
+            return Number.isFinite(value)
+                ? value
+                : 0;
         }
 
-
-        // ---------------------------------------------------------
-        // Extract a numeric field such as:
-        //
-        // channel=0
-        // note=60
-        // velocity=77
-        // ---------------------------------------------------------
 
         function extractNumber(line, fieldName) {
 
             const expression =
-                new RegExp("\\b" + fieldName + "=([-+]?\\d+(?:\\.\\d+)?)");
+                new RegExp(
+                    "\\b" +
+                    fieldName +
+                    "=([-+]?\\d+(?:\\.\\d+)?)"
+                );
 
-            const match = line.match(expression);
+            const match =
+                line.match(expression);
 
             if (!match) {
                 return null;
             }
 
-            const value = Number(match[1]);
+            const value =
+                Number(match[1]);
 
-            return Number.isFinite(value) ? value : null;
+            return Number.isFinite(value)
+                ? value
+                : null;
         }
 
 
-        // ---------------------------------------------------------
-        // Parse the entire MIDI text file.
-        //
-        // absoluteTime is advanced BEFORE deciding whether we care
-        // about the message itself.
-        //
-        // Only note_on and note_off become Patchworld events.
-        //
-        // Event type encoding:
-        //
-        //   1 = note_on
-        //   0 = note_off
-        // ---------------------------------------------------------
-
         function parseMidiText(text) {
 
-            const lines = text.split(/\r?\n/);
+            const lines =
+                text.split(/\r?\n/);
 
             const events = [];
 
@@ -171,20 +331,24 @@
 
             for (const rawLine of lines) {
 
-                const line = rawLine.trim();
+                const line =
+                    rawLine.trim();
 
                 if (line.length === 0) {
                     continue;
                 }
 
 
-                // ALWAYS accumulate the delta time first.
+                // ---------------------------------------------
+                // IMPORTANT:
+                //
+                // Every MIDI message contributes its delta
+                // time before we decide whether PW needs it.
+                // ---------------------------------------------
 
-                absoluteTime += extractDeltaTime(line);
+                absoluteTime +=
+                    extractDeltaTime(line);
 
-
-                // Ignore messages that are not note events
-                // AFTER their time has been accumulated.
 
                 const isNoteOn =
                     line.startsWith("note_on ");
@@ -199,13 +363,22 @@
 
 
                 const channel =
-                    extractNumber(line, "channel");
+                    extractNumber(
+                        line,
+                        "channel"
+                    );
 
                 const note =
-                    extractNumber(line, "note");
+                    extractNumber(
+                        line,
+                        "note"
+                    );
 
                 const velocity =
-                    extractNumber(line, "velocity");
+                    extractNumber(
+                        line,
+                        "velocity"
+                    );
 
 
                 if (
@@ -213,8 +386,9 @@
                     note === null ||
                     velocity === null
                 ) {
+
                     console.warn(
-                        "Skipping malformed note event:",
+                        "Skipping malformed MIDI event:",
                         line
                     );
 
@@ -224,58 +398,90 @@
 
                 events.push({
 
-                    index: events.length,
+                    index:
+                        events.length,
 
-                    time: absoluteTime,
+                    time:
+                        absoluteTime,
 
-                    type: isNoteOn ? 1 : 0,
+                    // Preserve the encoding used by the
+                    // successful original PW MIDI patch:
+                    //
+                    // 5 = note on
+                    // 6 = note off
 
-                    channel: channel,
+                    type:
+                        isNoteOn ? 5 : 6,
 
-                    note: note,
+                    note:
+                        note,
 
-                    velocity: velocity,
+                    velocity:
+                        velocity,
 
-                    originalLine: line
+                    channel:
+                        channel,
 
+                    originalLine:
+                        line
                 });
             }
 
 
             return {
-                events: events,
-                duration: absoluteTime
+
+                events:
+                    events,
+
+                duration:
+                    absoluteTime
             };
         }
 
 
-        // ---------------------------------------------------------
-        // Make a readable preview.
-        // ---------------------------------------------------------
+        // =========================================================
+        // PREVIEW
+        // =========================================================
 
         function makePreview(events) {
 
             const count =
-                Math.min(events.length, 25);
+                Math.min(
+                    events.length,
+                    20
+                );
 
             const lines = [];
 
 
-            for (let i = 0; i < count; i++) {
+            for (
+                let i = 0;
+                i < count;
+                i++
+            ) {
 
-                const e = events[i];
+                const e =
+                    events[i];
 
                 const typeName =
-                    e.type === 1 ? "ON " : "OFF";
+                    e.type === 5
+                    ? "ON "
+                    : "OFF";
+
 
                 lines.push(
 
-                    String(e.index).padStart(3, " ") +
+                    String(e.index)
+                        .padStart(3, " ") +
 
                     "   t=" +
-                    e.time.toFixed(6).padStart(10, " ") +
+
+                    e.time
+                        .toFixed(6)
+                        .padStart(10, " ") +
 
                     "   " +
+
                     typeName +
 
                     "   ch=" +
@@ -286,7 +492,6 @@
 
                     "   vel=" +
                     e.velocity
-
                 );
             }
 
@@ -306,36 +511,93 @@
         }
 
 
-        // ---------------------------------------------------------
-        // Fetch the MIDI text file from the same GitHub Pages site.
-        // ---------------------------------------------------------
+        // =========================================================
+        // UI HELPERS
+        // =========================================================
+
+        function updateImportButton() {
+
+            document.getElementById(
+                "importButton"
+            ).disabled = !(
+                parsedEvents.length > 0 &&
+                bridgeReady &&
+                wirelessReady &&
+                !importing
+            );
+        }
+
+
+        function updateCounters() {
+
+            document.getElementById(
+                "completedWrites"
+            ).textContent =
+                completedWrites;
+
+
+            document.getElementById(
+                "ackCount"
+            ).textContent =
+                ackCount;
+
+
+            document.getElementById(
+                "nakCount"
+            ).textContent =
+                nakCount;
+
+
+            document.getElementById(
+                "retryCount"
+            ).textContent =
+                retryCount;
+        }
+
+
+        function setStatus(text) {
+
+            document.getElementById(
+                "status"
+            ).textContent =
+                text;
+        }
+
+
+        // =========================================================
+        // LOAD MIDI FILE
+        // =========================================================
 
         async function loadMidiFile() {
 
-            const status =
-                document.getElementById("status");
-
             const button =
-                document.getElementById("loadButton");
+                document.getElementById(
+                    "loadButton"
+                );
 
 
             button.disabled = true;
 
-            status.textContent =
-                "Loading " + MIDI_FILENAME + "...";
+            setStatus(
+                "Loading " +
+                MIDI_FILENAME +
+                "..."
+            );
 
 
             try {
 
-                // Timestamp prevents GitHub/browser caching while
-                // we are developing and changing the test file.
+                const response =
+                    await fetch(
 
-                const response = await fetch(
-                    MIDI_FILENAME + "?t=" + Date.now(),
-                    {
-                        cache: "no-store"
-                    }
-                );
+                        MIDI_FILENAME +
+                        "?t=" +
+                        Date.now(),
+
+                        {
+                            cache: "no-store"
+                        }
+                    );
 
 
                 if (!response.ok) {
@@ -364,38 +626,43 @@
                 document.getElementById(
                     "eventCount"
                 ).textContent =
-                    result.events.length;
+                    parsedEvents.length;
 
 
                 document.getElementById(
                     "duration"
                 ).textContent =
-                    result.duration.toFixed(6) +
+                    result.duration
+                        .toFixed(6) +
                     " seconds";
+
+
+                document.getElementById(
+                    "writesRequired"
+                ).textContent =
+                    parsedEvents.length * 5;
 
 
                 document.getElementById(
                     "preview"
                 ).textContent =
-                    makePreview(result.events);
+                    makePreview(
+                        parsedEvents
+                    );
 
 
-                status.textContent =
-                    "Loaded and parsed successfully.";
-
-
-                console.log(
-                    "Parsed MIDI events:",
-                    parsedEvents
+                setStatus(
+                    "MIDI loaded and parsed successfully."
                 );
 
             }
 
             catch (error) {
 
-                status.textContent =
+                setStatus(
                     "ERROR: " +
-                    error.message;
+                    error.message
+                );
 
                 console.error(error);
 
@@ -404,19 +671,654 @@
             finally {
 
                 button.disabled = false;
+
+                updateImportButton();
             }
         }
 
 
-        // ---------------------------------------------------------
-        // UI
-        // ---------------------------------------------------------
+        // =========================================================
+        // PATCHWORLD WIRELESS SETUP
+        // =========================================================
+
+        async function subscribeToResponses() {
+
+            try {
+
+                document.getElementById(
+                    "wirelessStatus"
+                ).textContent =
+                    "Subscribing...";
+
+
+                await PatchWorld.subscribeWifi(
+                    CHANNELS.ack
+                );
+
+
+                await PatchWorld.subscribeWifi(
+                    CHANNELS.nak
+                );
+
+
+                wirelessReady = true;
+
+
+                document.getElementById(
+                    "wirelessStatus"
+                ).textContent =
+                    "ACK/NAK subscribed";
+
+
+                updateImportButton();
+
+            }
+
+            catch (error) {
+
+                wirelessReady = false;
+
+
+                document.getElementById(
+                    "wirelessStatus"
+                ).textContent =
+                    "Subscription ERROR";
+
+
+                setStatus(
+                    "Wireless subscription failed: " +
+                    error
+                );
+            }
+        }
+
+
+        // =========================================================
+        // BRIDGE LIFECYCLE
+        // =========================================================
+
+        PatchWorld.onData =
+            async function(context) {
+
+                bridgeReady = true;
+
+
+                document.getElementById(
+                    "bridgeStatus"
+                ).textContent =
+                    "Connected";
+
+
+                await subscribeToResponses();
+
+
+                updateImportButton();
+            };
+
+
+        PatchWorld.onDisconnected =
+            function() {
+
+                bridgeReady = false;
+
+                wirelessReady = false;
+
+
+                document.getElementById(
+                    "bridgeStatus"
+                ).textContent =
+                    "Disconnected";
+
+
+                document.getElementById(
+                    "wirelessStatus"
+                ).textContent =
+                    "Not subscribed";
+
+
+                if (importing) {
+                    stopImport(
+                        "Bridge disconnected during import."
+                    );
+                }
+
+
+                updateImportButton();
+            };
+
+
+        // =========================================================
+        // GET CURRENT FIELD
+        // =========================================================
+
+        function getCurrentFieldInfo() {
+
+            const event =
+                parsedEvents[
+                    currentEventIndex
+                ];
+
+
+            const fieldName =
+                FIELD_ORDER[
+                    currentFieldIndex
+                ];
+
+
+            return {
+
+                event:
+                    event,
+
+                fieldName:
+                    fieldName,
+
+                index:
+                    event.index,
+
+                value:
+                    event[fieldName],
+
+                channels:
+                    CHANNELS[fieldName]
+            };
+        }
+
+
+        // =========================================================
+        // SEND ONE ARRAY WRITE
+        // =========================================================
+
+        async function sendCurrentWrite() {
+
+            if (
+                !importing ||
+                abortRequested
+            ) {
+                return;
+            }
+
+
+            if (
+                currentEventIndex >=
+                parsedEvents.length
+            ) {
+
+                completeImport();
+
+                return;
+            }
+
+
+            const info =
+                getCurrentFieldInfo();
+
+
+            document.getElementById(
+                "currentWrite"
+            ).textContent =
+
+                info.fieldName +
+
+                "[" +
+                info.index +
+                "] = " +
+
+                info.value;
+
+
+            waitingForResponse = true;
+
+
+            // -------------------------------------------------
+            // Set the timeout BEFORE transmission so even an
+            // extremely quick Patchworld response is safe.
+            // -------------------------------------------------
+
+            clearTimeout(
+                responseTimer
+            );
+
+
+            responseTimer =
+                setTimeout(
+
+                    function() {
+
+                        if (
+                            !waitingForResponse ||
+                            !importing
+                        ) {
+                            return;
+                        }
+
+
+                        waitingForResponse = false;
+
+
+                        retryCurrentWrite(
+                            "ACK timeout"
+                        );
+
+                    },
+
+                    ACK_TIMEOUT_MS
+                );
+
+
+            try {
+
+                // ---------------------------------------------
+                // DATA ARRAY WRITE SEQUENCE:
+                //
+                // 1. Write Index
+                // 2. Write Value
+                //
+                // The arrival of Write Value causes the wrapper
+                // to write, read back, and issue ACK or NAK.
+                // ---------------------------------------------
+
+
+                await PatchWorld.sendWirelessJolt(
+                    info.channels.index,
+                    info.index
+                );
+
+
+                await PatchWorld.sendWirelessJolt(
+                    info.channels.value,
+                    info.value
+                );
+
+            }
+
+            catch (error) {
+
+                clearTimeout(
+                    responseTimer
+                );
+
+                waitingForResponse =
+                    false;
+
+
+                retryCurrentWrite(
+                    "Send error: " +
+                    error
+                );
+            }
+        }
+
+
+        // =========================================================
+        // ACK / NAK RECEIVE
+        // =========================================================
+
+        PatchWorld.onWifiJolt =
+            function(channel, value) {
+
+
+                if (!importing) {
+                    return;
+                }
+
+
+                // ---------------------------------------------
+                // ACK
+                // ---------------------------------------------
+
+                if (
+                    channel ===
+                    CHANNELS.ack
+                ) {
+
+                    if (!waitingForResponse) {
+                        return;
+                    }
+
+
+                    clearTimeout(
+                        responseTimer
+                    );
+
+
+                    waitingForResponse =
+                        false;
+
+
+                    ackCount++;
+
+                    completedWrites++;
+
+                    retryForCurrentWrite =
+                        0;
+
+
+                    updateCounters();
+
+
+                    advanceToNextWrite();
+
+                    return;
+                }
+
+
+                // ---------------------------------------------
+                // NAK
+                // ---------------------------------------------
+
+                if (
+                    channel ===
+                    CHANNELS.nak
+                ) {
+
+                    if (!waitingForResponse) {
+                        return;
+                    }
+
+
+                    clearTimeout(
+                        responseTimer
+                    );
+
+
+                    waitingForResponse =
+                        false;
+
+
+                    nakCount++;
+
+
+                    updateCounters();
+
+
+                    retryCurrentWrite(
+                        "NAK received"
+                    );
+                }
+            };
+
+
+        // =========================================================
+        // ADVANCE
+        // =========================================================
+
+        function advanceToNextWrite() {
+
+            currentFieldIndex++;
+
+
+            if (
+                currentFieldIndex >=
+                FIELD_ORDER.length
+            ) {
+
+                currentFieldIndex = 0;
+
+                currentEventIndex++;
+            }
+
+
+            if (
+                currentEventIndex >=
+                parsedEvents.length
+            ) {
+
+                completeImport();
+
+                return;
+            }
+
+
+            sendCurrentWrite();
+        }
+
+
+        // =========================================================
+        // RETRY
+        // =========================================================
+
+        function retryCurrentWrite(reason) {
+
+            retryForCurrentWrite++;
+
+            retryCount++;
+
+
+            updateCounters();
+
+
+            if (
+                retryForCurrentWrite >
+                MAX_RETRIES
+            ) {
+
+                const info =
+                    getCurrentFieldInfo();
+
+
+                stopImport(
+
+                    "FAILED: " +
+
+                    info.fieldName +
+
+                    "[" +
+                    info.index +
+                    "] after " +
+
+                    MAX_RETRIES +
+
+                    " retries. " +
+
+                    reason
+                );
+
+
+                return;
+            }
+
+
+            setStatus(
+
+                "Retry " +
+
+                retryForCurrentWrite +
+
+                "/" +
+
+                MAX_RETRIES +
+
+                ": " +
+
+                reason
+            );
+
+
+            // Yield one browser event turn before retrying.
+
+            setTimeout(
+                sendCurrentWrite,
+                0
+            );
+        }
+
+
+        // =========================================================
+        // START IMPORT
+        // =========================================================
+
+        function startImport() {
+
+            if (
+                parsedEvents.length === 0 ||
+                !bridgeReady ||
+                !wirelessReady
+            ) {
+                return;
+            }
+
+
+            importing = true;
+
+            abortRequested = false;
+
+
+            currentEventIndex = 0;
+
+            currentFieldIndex = 0;
+
+            completedWrites = 0;
+
+            ackCount = 0;
+
+            nakCount = 0;
+
+            retryCount = 0;
+
+            retryForCurrentWrite = 0;
+
+            waitingForResponse = false;
+
+
+            updateCounters();
+
+
+            document.getElementById(
+                "importButton"
+            ).disabled = true;
+
+
+            document.getElementById(
+                "loadButton"
+            ).disabled = true;
+
+
+            document.getElementById(
+                "abortButton"
+            ).disabled = false;
+
+
+            setStatus(
+                "Import started..."
+            );
+
+
+            sendCurrentWrite();
+        }
+
+
+        // =========================================================
+        // COMPLETE
+        // =========================================================
+
+        function completeImport() {
+
+            clearTimeout(
+                responseTimer
+            );
+
+
+            importing = false;
+
+            waitingForResponse = false;
+
+
+            document.getElementById(
+                "abortButton"
+            ).disabled = true;
+
+
+            document.getElementById(
+                "loadButton"
+            ).disabled = false;
+
+
+            document.getElementById(
+                "currentWrite"
+            ).textContent =
+                "Complete";
+
+
+            setStatus(
+
+                "IMPORT COMPLETE — " +
+
+                completedWrites +
+
+                " verified writes."
+            );
+
+
+            updateImportButton();
+        }
+
+
+        // =========================================================
+        // ABORT / FAILURE
+        // =========================================================
+
+        function stopImport(reason) {
+
+            clearTimeout(
+                responseTimer
+            );
+
+
+            abortRequested = true;
+
+            importing = false;
+
+            waitingForResponse = false;
+
+
+            document.getElementById(
+                "abortButton"
+            ).disabled = true;
+
+
+            document.getElementById(
+                "loadButton"
+            ).disabled = false;
+
+
+            setStatus(reason);
+
+
+            updateImportButton();
+        }
+
+
+        // =========================================================
+        // BUTTONS
+        // =========================================================
 
         document.getElementById(
             "loadButton"
         ).addEventListener(
             "click",
             loadMidiFile
+        );
+
+
+        document.getElementById(
+            "importButton"
+        ).addEventListener(
+            "click",
+            startImport
+        );
+
+
+        document.getElementById(
+            "abortButton"
+        ).addEventListener(
+            "click",
+            function() {
+
+                stopImport(
+                    "Import aborted by user."
+                );
+            }
         );
 
     </script>
