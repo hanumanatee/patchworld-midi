@@ -1,0 +1,112 @@
+MetaMessage('ticks_per_beat', value=480, time=0)
+MetaMessage('time_signature', numerator=4, denominator=4, clocks_per_click=24, notated_32nd_notes_per_beat=8, time=0)
+MetaMessage('key_signature', key='C', time=0)
+MetaMessage('smpte_offset', frame_rate=25, hours=1, minutes=0, seconds=0, frames=0, sub_frames=0, time=0)
+MetaMessage('set_tempo', tempo=500000, time=0)
+MetaMessage('channel_prefix', channel=0, time=0)
+MetaMessage('track_name', name='Quicktime_Synth_1', time=0)
+MetaMessage('instrument_name', name='Quicktime_Synth_1', time=0)
+MetaMessage('channel_prefix', channel=1, time=0)
+MetaMessage('track_name', name='Quicktime_Synth_2', time=0)
+MetaMessage('instrument_name', name='Quicktime_Synth_2', time=0)
+note_on channel=0 note=60 velocity=77 time=0.5
+note_off channel=0 note=60 velocity=85 time=0.16979166666666667
+note_on channel=0 note=65 velocity=88 time=0.3302083333333333
+note_off channel=0 note=65 velocity=102 time=0.125
+note_on channel=0 note=70 velocity=78 time=0.125
+note_off channel=0 note=70 velocity=108 time=0.15729166666666666
+note_on channel=0 note=68 velocity=91 time=0.34270833333333334
+note_on channel=1 note=63 velocity=96 time=0.75
+note_off channel=1 note=63 velocity=54 time=0.08229166666666667
+note_off channel=0 note=68 velocity=111 time=0.41770833333333335
+note_on channel=1 note=73 velocity=107 time=0.25
+note_off channel=1 note=73 velocity=111 time=0.11562499999999999
+note_on channel=1 note=71 velocity=100 time=0.384375
+note_off channel=1 note=71 velocity=108 time=0.6645833333333333
+note_on channel=0 note=62 velocity=81 time=0.08541666666666667
+note_off channel=0 note=62 velocity=108 time=0.13020833333333334
+note_on channel=0 note=67 velocity=88 time=0.3697916666666667
+note_off channel=0 note=67 velocity=56 time=0.196875
+note_on channel=0 note=72 velocity=80 time=0.053125
+note_off channel=0 note=72 velocity=102 time=0.12708333333333333
+note_on channel=0 note=70 velocity=101 time=0.3729166666666667
+note_off channel=0 note=70 velocity=105 time=0.09895833333333333
+note_on channel=1 note=70 velocity=98 time=0.4010416666666667
+note_on channel=0 note=75 velocity=105 time=0.125
+note_off channel=1 note=70 velocity=108 time=0.003125
+note_off channel=0 note=75 velocity=111 time=0.11041666666666666
+note_on channel=1 note=72 velocity=84 time=0.011458333333333333
+note_off channel=1 note=72 velocity=105 time=0.13125
+note_on channel=1 note=77 velocity=105 time=0.11875
+note_off channel=1 note=77 velocity=111 time=0.11562499999999999
+note_on channel=0 note=72 velocity=93 time=0.009375
+note_off channel=0 note=72 velocity=108 time=0.11458333333333333
+note_on channel=1 note=75 velocity=108 time=0.010416666666666666
+note_on channel=1 note=73 velocity=35 time=0.125
+note_off channel=1 note=75 velocity=105 time=0.003125
+note_off channel=1 note=73 velocity=114 time=0.058333333333333334
+note_on channel=0 note=77 velocity=93 time=0.18854166666666666
+note_off channel=0 note=77 velocity=108 time=0.096875
+note_on channel=1 note=73 velocity=112 time=0.028125
+note_off channel=1 note=73 velocity=108 time=0.12708333333333333
+note_on channel=1 note=72 velocity=112 time=0.3729166666666667
+note_off channel=1 note=72 velocity=111 time=0.48541666666666666
+note_on channel=0 note=74 velocity=54 time=0.014583333333333334
+note_off channel=0 note=74 velocity=85 time=0.334375
+note_on channel=0 note=79 velocity=89 time=0.165625
+note_on channel=0 note=84 velocity=91 time=0.25
+note_off channel=0 note=79 velocity=96 time=0
+note_off channel=0 note=84 velocity=105 time=0.11562499999999999
+note_on channel=1 note=70 velocity=108 time=0.134375
+note_off channel=1 note=70 velocity=96 time=0.14895833333333333
+note_on channel=0 note=82 velocity=99 time=0.10104166666666667
+note_on channel=1 note=68 velocity=59 time=0
+note_off channel=1 note=68 velocity=59 time=0.20520833333333333
+note_on channel=1 note=67 velocity=83 time=0.04479166666666667
+note_off channel=1 note=67 velocity=108 time=0.7197916666666666
+note_off channel=0 note=82 velocity=93 time=0.16145833333333334
+note_on channel=0 note=80 velocity=99 time=0.61875
+note_on channel=1 note=65 velocity=107 time=0
+note_off channel=0 note=80 velocity=105 time=0.13020833333333334
+note_off channel=1 note=65 velocity=105 time=0
+note_on channel=0 note=75 velocity=47 time=0.11979166666666667
+note_on channel=1 note=63 velocity=47 time=0
+note_off channel=1 note=63 velocity=105 time=0.06458333333333333
+note_off channel=0 note=75 velocity=71 time=0.008333333333333333
+note_on channel=0 note=70 velocity=75 time=0.17708333333333334
+note_on channel=1 note=62 velocity=82 time=0
+note_off channel=0 note=70 velocity=71 time=0.09791666666666667
+note_off channel=1 note=62 velocity=108 time=0.04479166666666667
+note_on channel=0 note=73 velocity=73 time=0.3572916666666667
+note_on channel=1 note=62 velocity=93 time=0
+note_off channel=0 note=73 velocity=34 time=0.09270833333333334
+note_off channel=1 note=62 velocity=96 time=0.07604166666666666
+note_on channel=0 note=78 velocity=96 time=0.08125
+note_on channel=1 note=61 velocity=63 time=0
+note_off channel=0 note=78 velocity=82 time=0.08333333333333333
+note_off channel=1 note=61 velocity=59 time=0.06458333333333333
+note_on channel=1 note=60 velocity=68 time=0.10208333333333333
+note_off channel=1 note=60 velocity=102 time=0.12708333333333333
+note_on channel=0 note=77 velocity=102 time=0.3729166666666667
+note_on channel=1 note=61 velocity=103 time=0
+note_off channel=1 note=61 velocity=111 time=0.11770833333333333
+note_off channel=0 note=77 velocity=105 time=0.017708333333333333
+note_on channel=0 note=72 velocity=66 time=0.11458333333333333
+note_on channel=1 note=60 velocity=66 time=0
+note_off channel=0 note=72 velocity=96 time=0.16666666666666666
+note_off channel=1 note=60 velocity=91 time=0.0375
+note_on channel=0 note=67 velocity=70 time=0.04583333333333333
+note_on channel=1 note=59 velocity=83 time=0
+note_off channel=1 note=59 velocity=108 time=0.11875
+note_off channel=0 note=67 velocity=85 time=0.009375
+note_on channel=0 note=70 velocity=75 time=0.371875
+note_on channel=1 note=59 velocity=89 time=0
+note_on channel=1 note=58 velocity=55 time=0.125
+note_off channel=0 note=70 velocity=91 time=0.027083333333333334
+note_off channel=1 note=59 velocity=69 time=0.014583333333333334
+note_on channel=0 note=75 velocity=80 time=0.08333333333333333
+note_off channel=1 note=58 velocity=102 time=0.10416666666666667
+note_off channel=0 note=75 velocity=91 time=0.00625
+note_on channel=1 note=57 velocity=104 time=0.014583333333333334
+note_off channel=1 note=57 velocity=111 time=0.12604166666666666
+MetaMessage('end_of_track', time=0)
