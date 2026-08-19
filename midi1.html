@@ -1,28 +1,425 @@
-<input type="file" id="midiFile" accept=".middt,.txt">
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Patchworld MIDI Importer</title>
 
-<pre id="preview">No file selected.</pre>
-
-<script>
-    const input = document.getElementById("midiFile");
-    const preview = document.getElementById("preview");
-
-    input.addEventListener("change", async () => {
-        const file = input.files[0];
-
-        if (!file) {
-            preview.textContent = "No file selected.";
-            return;
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #181818;
+            color: #eeeeee;
+            margin: 30px;
         }
 
-        const text = await file.text();
+        h1 {
+            margin-bottom: 5px;
+        }
 
-        const firstLines = text
-            .split(/\r?\n/)
-            .slice(0, 12)
-            .join("\n");
+        #revision {
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
 
-        preview.textContent =
-            "File: " + file.name + "\n\n" +
-            firstLines;
-    });
-</script>
+        .section {
+            margin-top: 18px;
+            padding: 14px;
+            background: #282828;
+            border-radius: 8px;
+        }
+
+        .label {
+            color: #aaaaaa;
+        }
+
+        button {
+            font-size: 18px;
+            padding: 10px 18px;
+            margin-top: 10px;
+        }
+
+        pre {
+            background: #111111;
+            padding: 12px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        #status {
+            font-size: 18px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="revision">REV 1</div>
+
+    <h1>Patchworld MIDI Importer</h1>
+
+    <div class="section">
+        <div>
+            <span class="label">Source:</span>
+            test_fourths_2chan.middt
+        </div>
+
+        <button id="loadButton">Load and Parse MIDI Text</button>
+    </div>
+
+
+    <div class="section">
+        <div id="status">Not loaded.</div>
+
+        <div>
+            <span class="label">Playable events:</span>
+            <span id="eventCount">-</span>
+        </div>
+
+        <div>
+            <span class="label">Accumulated duration:</span>
+            <span id="duration">-</span>
+        </div>
+    </div>
+
+
+    <div class="section">
+        <div class="label">First parsed events:</div>
+        <pre id="preview">No data yet.</pre>
+    </div>
+
+
+    <script>
+
+        const MIDI_FILENAME = "test_fourths_2chan.middt";
+
+        let parsedEvents = [];
+
+
+        // ---------------------------------------------------------
+        // Extract the time= value from ANY MIDI text line.
+        //
+        // This is deliberately independent of whether the line
+        // represents an event that Patchworld will eventually use.
+        // Every delta time contributes to absolute elapsed time.
+        // ---------------------------------------------------------
+
+        function extractDeltaTime(line) {
+
+            const match = line.match(
+                /\btime=([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)/
+            );
+
+            if (!match) {
+                return 0;
+            }
+
+            const value = Number(match[1]);
+
+            return Number.isFinite(value) ? value : 0;
+        }
+
+
+        // ---------------------------------------------------------
+        // Extract a numeric field such as:
+        //
+        // channel=0
+        // note=60
+        // velocity=77
+        // ---------------------------------------------------------
+
+        function extractNumber(line, fieldName) {
+
+            const expression =
+                new RegExp("\\b" + fieldName + "=([-+]?\\d+(?:\\.\\d+)?)");
+
+            const match = line.match(expression);
+
+            if (!match) {
+                return null;
+            }
+
+            const value = Number(match[1]);
+
+            return Number.isFinite(value) ? value : null;
+        }
+
+
+        // ---------------------------------------------------------
+        // Parse the entire MIDI text file.
+        //
+        // absoluteTime is advanced BEFORE deciding whether we care
+        // about the message itself.
+        //
+        // Only note_on and note_off become Patchworld events.
+        //
+        // Event type encoding:
+        //
+        //   1 = note_on
+        //   0 = note_off
+        // ---------------------------------------------------------
+
+        function parseMidiText(text) {
+
+            const lines = text.split(/\r?\n/);
+
+            const events = [];
+
+            let absoluteTime = 0;
+
+
+            for (const rawLine of lines) {
+
+                const line = rawLine.trim();
+
+                if (line.length === 0) {
+                    continue;
+                }
+
+
+                // ALWAYS accumulate the delta time first.
+
+                absoluteTime += extractDeltaTime(line);
+
+
+                // Ignore messages that are not note events
+                // AFTER their time has been accumulated.
+
+                const isNoteOn =
+                    line.startsWith("note_on ");
+
+                const isNoteOff =
+                    line.startsWith("note_off ");
+
+
+                if (!isNoteOn && !isNoteOff) {
+                    continue;
+                }
+
+
+                const channel =
+                    extractNumber(line, "channel");
+
+                const note =
+                    extractNumber(line, "note");
+
+                const velocity =
+                    extractNumber(line, "velocity");
+
+
+                if (
+                    channel === null ||
+                    note === null ||
+                    velocity === null
+                ) {
+                    console.warn(
+                        "Skipping malformed note event:",
+                        line
+                    );
+
+                    continue;
+                }
+
+
+                events.push({
+
+                    index: events.length,
+
+                    time: absoluteTime,
+
+                    type: isNoteOn ? 1 : 0,
+
+                    channel: channel,
+
+                    note: note,
+
+                    velocity: velocity,
+
+                    originalLine: line
+
+                });
+            }
+
+
+            return {
+                events: events,
+                duration: absoluteTime
+            };
+        }
+
+
+        // ---------------------------------------------------------
+        // Make a readable preview.
+        // ---------------------------------------------------------
+
+        function makePreview(events) {
+
+            const count =
+                Math.min(events.length, 25);
+
+            const lines = [];
+
+
+            for (let i = 0; i < count; i++) {
+
+                const e = events[i];
+
+                const typeName =
+                    e.type === 1 ? "ON " : "OFF";
+
+                lines.push(
+
+                    String(e.index).padStart(3, " ") +
+
+                    "   t=" +
+                    e.time.toFixed(6).padStart(10, " ") +
+
+                    "   " +
+                    typeName +
+
+                    "   ch=" +
+                    e.channel +
+
+                    "   note=" +
+                    e.note +
+
+                    "   vel=" +
+                    e.velocity
+
+                );
+            }
+
+
+            if (events.length > count) {
+
+                lines.push(
+                    "",
+                    "... " +
+                    (events.length - count) +
+                    " more events"
+                );
+            }
+
+
+            return lines.join("\n");
+        }
+
+
+        // ---------------------------------------------------------
+        // Fetch the MIDI text file from the same GitHub Pages site.
+        // ---------------------------------------------------------
+
+        async function loadMidiFile() {
+
+            const status =
+                document.getElementById("status");
+
+            const button =
+                document.getElementById("loadButton");
+
+
+            button.disabled = true;
+
+            status.textContent =
+                "Loading " + MIDI_FILENAME + "...";
+
+
+            try {
+
+                // Timestamp prevents GitHub/browser caching while
+                // we are developing and changing the test file.
+
+                const response = await fetch(
+                    MIDI_FILENAME + "?t=" + Date.now(),
+                    {
+                        cache: "no-store"
+                    }
+                );
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        "HTTP " +
+                        response.status +
+                        " " +
+                        response.statusText
+                    );
+                }
+
+
+                const text =
+                    await response.text();
+
+
+                const result =
+                    parseMidiText(text);
+
+
+                parsedEvents =
+                    result.events;
+
+
+                document.getElementById(
+                    "eventCount"
+                ).textContent =
+                    result.events.length;
+
+
+                document.getElementById(
+                    "duration"
+                ).textContent =
+                    result.duration.toFixed(6) +
+                    " seconds";
+
+
+                document.getElementById(
+                    "preview"
+                ).textContent =
+                    makePreview(result.events);
+
+
+                status.textContent =
+                    "Loaded and parsed successfully.";
+
+
+                console.log(
+                    "Parsed MIDI events:",
+                    parsedEvents
+                );
+
+            }
+
+            catch (error) {
+
+                status.textContent =
+                    "ERROR: " +
+                    error.message;
+
+                console.error(error);
+
+            }
+
+            finally {
+
+                button.disabled = false;
+            }
+        }
+
+
+        // ---------------------------------------------------------
+        // UI
+        // ---------------------------------------------------------
+
+        document.getElementById(
+            "loadButton"
+        ).addEventListener(
+            "click",
+            loadMidiFile
+        );
+
+    </script>
+
+</body>
+</html>
