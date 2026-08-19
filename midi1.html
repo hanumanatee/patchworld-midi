@@ -32,11 +32,16 @@
             color: #aaaaaa;
         }
 
-        button {
+        button,
+        select {
             font-size: 18px;
             padding: 10px 18px;
             margin-top: 10px;
             margin-right: 8px;
+        }
+
+        select {
+            min-width: 320px;
         }
 
         pre {
@@ -69,7 +74,7 @@
 
 <body>
 
-    <div id="revision">REV 2</div>
+    <div id="revision">REV 3</div>
 
     <h1>Patchworld MIDI Importer</h1>
 
@@ -83,18 +88,23 @@
             <span class="label">Wireless:</span>
             <span id="wirelessStatus">Not subscribed</span>
         </div>
-
-        <div>
-            <span class="label">Source:</span>
-            test_fourths_2chan.middt
-        </div>
     </div>
 
 
     <div class="section">
 
-        <button id="loadButton">
-            Load and Parse MIDI Text
+        <div>
+            <span class="label">MIDI file:</span>
+        </div>
+
+        <select id="fileSelect" disabled>
+            <option>Loading file list...</option>
+        </select>
+
+        <br>
+
+        <button id="loadButton" disabled>
+            Load and Parse Selected MIDI
         </button>
 
         <button id="importButton" disabled>
@@ -112,6 +122,11 @@
 
         <div id="status">
             Waiting.
+        </div>
+
+        <div>
+            <span class="label">Selected file:</span>
+            <span id="selectedFile">-</span>
         </div>
 
         <div>
@@ -168,9 +183,6 @@
     </div>
 
 
-    <!--
-        Load Patchworld bridge with cache-busting timestamp.
-    -->
     <script>
         document.write(
             '<script src="patchworld-bridge.js?t=' +
@@ -186,8 +198,8 @@
         // CONFIGURATION
         // =========================================================
 
-        const MIDI_FILENAME =
-            "test_fourths_2chan.middt";
+        const FILE_LIST_NAME =
+            "midifiles.txt";
 
 
         const CHANNELS = {
@@ -218,7 +230,6 @@
             },
 
             ack: "midi_ack",
-
             nak: "midi_nak"
         };
 
@@ -234,8 +245,6 @@
 
         const MAX_RETRIES = 5;
 
-        // Give Patchworld plenty of time before regarding
-        // absence of ACK/NAK as a failed write.
         const ACK_TIMEOUT_MS = 2000;
 
 
@@ -246,30 +255,145 @@
         let parsedEvents = [];
 
         let bridgeReady = false;
-
         let wirelessReady = false;
 
         let importing = false;
-
         let abortRequested = false;
 
         let currentEventIndex = 0;
-
         let currentFieldIndex = 0;
 
         let completedWrites = 0;
-
         let ackCount = 0;
-
         let nakCount = 0;
-
         let retryCount = 0;
-
         let retryForCurrentWrite = 0;
 
         let waitingForResponse = false;
-
         let responseTimer = null;
+
+
+        // =========================================================
+        // MIDI FILE LIST
+        // =========================================================
+
+        async function loadFileList() {
+
+            const select =
+                document.getElementById("fileSelect");
+
+            const loadButton =
+                document.getElementById("loadButton");
+
+
+            try {
+
+                const response =
+                    await fetch(
+                        FILE_LIST_NAME +
+                        "?t=" +
+                        Date.now(),
+                        {
+                            cache: "no-store"
+                        }
+                    );
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        "HTTP " +
+                        response.status +
+                        " " +
+                        response.statusText
+                    );
+                }
+
+
+                const text =
+                    await response.text();
+
+
+                const files =
+                    text
+                        .split(/\r?\n/)
+                        .map(line => line.trim())
+                        .filter(line => line.length > 0);
+
+
+                select.innerHTML = "";
+
+
+                if (files.length === 0) {
+
+                    const option =
+                        document.createElement("option");
+
+                    option.textContent =
+                        "No MIDI files listed";
+
+                    select.appendChild(option);
+
+                    select.disabled = true;
+
+                    loadButton.disabled = true;
+
+                    setStatus(
+                        "midifiles.txt contains no filenames."
+                    );
+
+                    return;
+                }
+
+
+                for (const filename of files) {
+
+                    const option =
+                        document.createElement("option");
+
+                    option.value =
+                        filename;
+
+                    option.textContent =
+                        filename;
+
+                    select.appendChild(option);
+                }
+
+
+                select.disabled = false;
+
+                loadButton.disabled = false;
+
+
+                document.getElementById(
+                    "selectedFile"
+                ).textContent =
+                    select.value;
+
+
+                setStatus(
+                    "MIDI file list loaded."
+                );
+
+            }
+
+            catch (error) {
+
+                select.innerHTML =
+                    "<option>File list error</option>";
+
+                select.disabled = true;
+
+                loadButton.disabled = true;
+
+
+                setStatus(
+                    "ERROR loading midifiles.txt: " +
+                    error.message
+                );
+            }
+        }
 
 
         // =========================================================
@@ -286,7 +410,8 @@
                 return 0;
             }
 
-            const value = Number(match[1]);
+            const value =
+                Number(match[1]);
 
             return Number.isFinite(value)
                 ? value
@@ -303,15 +428,19 @@
                     "=([-+]?\\d+(?:\\.\\d+)?)"
                 );
 
+
             const match =
                 line.match(expression);
+
 
             if (!match) {
                 return null;
             }
 
+
             const value =
                 Number(match[1]);
+
 
             return Number.isFinite(value)
                 ? value
@@ -334,17 +463,13 @@
                 const line =
                     rawLine.trim();
 
+
                 if (line.length === 0) {
                     continue;
                 }
 
 
-                // ---------------------------------------------
-                // IMPORTANT:
-                //
-                // Every MIDI message contributes its delta
-                // time before we decide whether PW needs it.
-                // ---------------------------------------------
+                // Every MIDI message contributes its delta time.
 
                 absoluteTime +=
                     extractDeltaTime(line);
@@ -404,11 +529,9 @@
                     time:
                         absoluteTime,
 
-                    // Preserve the encoding used by the
-                    // successful original PW MIDI patch:
-                    //
-                    // 5 = note on
-                    // 6 = note off
+                    // Existing Patchworld convention:
+                    // 5 = Note On
+                    // 6 = Note Off
 
                     type:
                         isNoteOn ? 5 : 6,
@@ -463,6 +586,7 @@
                 const e =
                     events[i];
 
+
                 const typeName =
                     e.type === 5
                     ? "ON "
@@ -515,6 +639,15 @@
         // UI HELPERS
         // =========================================================
 
+        function setStatus(text) {
+
+            document.getElementById(
+                "status"
+            ).textContent =
+                text;
+        }
+
+
         function updateImportButton() {
 
             document.getElementById(
@@ -555,20 +688,26 @@
         }
 
 
-        function setStatus(text) {
-
-            document.getElementById(
-                "status"
-            ).textContent =
-                text;
-        }
-
-
         // =========================================================
-        // LOAD MIDI FILE
+        // LOAD SELECTED MIDI
         // =========================================================
 
         async function loadMidiFile() {
+
+            const select =
+                document.getElementById(
+                    "fileSelect"
+                );
+
+
+            const filename =
+                select.value;
+
+
+            if (!filename) {
+                return;
+            }
+
 
             const button =
                 document.getElementById(
@@ -578,11 +717,18 @@
 
             button.disabled = true;
 
+
             setStatus(
                 "Loading " +
-                MIDI_FILENAME +
+                filename +
                 "..."
             );
+
+
+            document.getElementById(
+                "selectedFile"
+            ).textContent =
+                filename;
 
 
             try {
@@ -590,7 +736,7 @@
                 const response =
                     await fetch(
 
-                        MIDI_FILENAME +
+                        encodeURI(filename) +
                         "?t=" +
                         Date.now(),
 
@@ -640,7 +786,8 @@
                 document.getElementById(
                     "writesRequired"
                 ).textContent =
-                    parsedEvents.length * 5;
+                    parsedEvents.length *
+                    FIELD_ORDER.length;
 
 
                 document.getElementById(
@@ -659,12 +806,37 @@
 
             catch (error) {
 
+                parsedEvents = [];
+
+
+                document.getElementById(
+                    "eventCount"
+                ).textContent =
+                    "-";
+
+
+                document.getElementById(
+                    "duration"
+                ).textContent =
+                    "-";
+
+
+                document.getElementById(
+                    "writesRequired"
+                ).textContent =
+                    "-";
+
+
+                document.getElementById(
+                    "preview"
+                ).textContent =
+                    "No parsed MIDI data.";
+
+
                 setStatus(
                     "ERROR: " +
                     error.message
                 );
-
-                console.error(error);
 
             }
 
@@ -777,6 +949,7 @@
 
 
                 if (importing) {
+
                     stopImport(
                         "Bridge disconnected during import."
                     );
@@ -788,7 +961,7 @@
 
 
         // =========================================================
-        // GET CURRENT FIELD
+        // CURRENT FIELD
         // =========================================================
 
         function getCurrentFieldInfo() {
@@ -870,11 +1043,6 @@
             waitingForResponse = true;
 
 
-            // -------------------------------------------------
-            // Set the timeout BEFORE transmission so even an
-            // extremely quick Patchworld response is safe.
-            // -------------------------------------------------
-
             clearTimeout(
                 responseTimer
             );
@@ -893,7 +1061,8 @@
                         }
 
 
-                        waitingForResponse = false;
+                        waitingForResponse =
+                            false;
 
 
                         retryCurrentWrite(
@@ -908,16 +1077,8 @@
 
             try {
 
-                // ---------------------------------------------
-                // DATA ARRAY WRITE SEQUENCE:
-                //
-                // 1. Write Index
-                // 2. Write Value
-                //
-                // The arrival of Write Value causes the wrapper
-                // to write, read back, and issue ACK or NAK.
-                // ---------------------------------------------
-
+                // Data Array protocol:
+                // index first, then value.
 
                 await PatchWorld.sendWirelessJolt(
                     info.channels.index,
@@ -938,6 +1099,7 @@
                     responseTimer
                 );
 
+
                 waitingForResponse =
                     false;
 
@@ -951,7 +1113,7 @@
 
 
         // =========================================================
-        // ACK / NAK RECEIVE
+        // ACK / NAK
         // =========================================================
 
         PatchWorld.onWifiJolt =
@@ -962,10 +1124,6 @@
                     return;
                 }
 
-
-                // ---------------------------------------------
-                // ACK
-                // ---------------------------------------------
 
                 if (
                     channel ===
@@ -1002,10 +1160,6 @@
                     return;
                 }
 
-
-                // ---------------------------------------------
-                // NAK
-                // ---------------------------------------------
 
                 if (
                     channel ===
@@ -1135,8 +1289,6 @@
             );
 
 
-            // Yield one browser event turn before retrying.
-
             setTimeout(
                 sendCurrentWrite,
                 0
@@ -1195,6 +1347,11 @@
 
 
             document.getElementById(
+                "fileSelect"
+            ).disabled = true;
+
+
+            document.getElementById(
                 "abortButton"
             ).disabled = false;
 
@@ -1231,6 +1388,11 @@
 
             document.getElementById(
                 "loadButton"
+            ).disabled = false;
+
+
+            document.getElementById(
+                "fileSelect"
             ).disabled = false;
 
 
@@ -1282,6 +1444,11 @@
             ).disabled = false;
 
 
+            document.getElementById(
+                "fileSelect"
+            ).disabled = false;
+
+
             setStatus(reason);
 
 
@@ -1290,8 +1457,52 @@
 
 
         // =========================================================
-        // BUTTONS
+        // UI EVENTS
         // =========================================================
+
+        document.getElementById(
+            "fileSelect"
+        ).addEventListener(
+            "change",
+            function() {
+
+                document.getElementById(
+                    "selectedFile"
+                ).textContent =
+                    this.value;
+
+
+                parsedEvents = [];
+
+
+                document.getElementById(
+                    "eventCount"
+                ).textContent =
+                    "-";
+
+
+                document.getElementById(
+                    "duration"
+                ).textContent =
+                    "-";
+
+
+                document.getElementById(
+                    "writesRequired"
+                ).textContent =
+                    "-";
+
+
+                document.getElementById(
+                    "preview"
+                ).textContent =
+                    "Selected file has not been parsed yet.";
+
+
+                updateImportButton();
+            }
+        );
+
 
         document.getElementById(
             "loadButton"
@@ -1320,6 +1531,13 @@
                 );
             }
         );
+
+
+        // =========================================================
+        // INITIALIZE FILE LIST
+        // =========================================================
+
+        loadFileList();
 
     </script>
 
