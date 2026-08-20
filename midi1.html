@@ -79,7 +79,7 @@
 
 <body>
 
-    <div id="revision">REV 4</div>
+    <div id="revision">REV 5</div>
 
     <h1>Patchworld MIDI Importer</h1>
 
@@ -248,7 +248,9 @@
             },
 
             ack: "midi_ack",
-            nak: "midi_nak"
+            nak: "midi_nak",
+
+            eventCount: "midi_event_count"
         };
 
 
@@ -1045,7 +1047,6 @@
             function() {
 
                 bridgeReady = false;
-
                 wirelessReady = false;
 
 
@@ -1318,7 +1319,6 @@
             ) {
 
                 currentFieldIndex = 0;
-
                 currentEventIndex++;
             }
 
@@ -1345,7 +1345,6 @@
         function retryCurrentWrite(reason) {
 
             retryForCurrentWrite++;
-
             retryCount++;
 
 
@@ -1426,22 +1425,16 @@
 
 
             importing = true;
-
             abortRequested = false;
 
 
             currentEventIndex = 0;
-
             currentFieldIndex = 0;
 
             completedWrites = 0;
-
             ackCount = 0;
-
             nakCount = 0;
-
             retryCount = 0;
-
             retryForCurrentWrite = 0;
 
             waitingForResponse = false;
@@ -1488,7 +1481,7 @@
         // COMPLETE
         // =========================================================
 
-        function completeImport() {
+        async function completeImport() {
 
             clearTimeout(
                 responseTimer
@@ -1496,8 +1489,51 @@
 
 
             importing = false;
-
             waitingForResponse = false;
+
+
+            try {
+
+                await PatchWorld.sendWirelessJolt(
+                    CHANNELS.eventCount,
+                    importEventLimit
+                );
+
+            }
+
+            catch (error) {
+
+                document.getElementById(
+                    "abortButton"
+                ).disabled = true;
+
+
+                document.getElementById(
+                    "loadButton"
+                ).disabled = false;
+
+
+                document.getElementById(
+                    "fileSelect"
+                ).disabled = false;
+
+
+                document.getElementById(
+                    "eventLimit"
+                ).disabled = false;
+
+
+                setStatus(
+                    "Arrays imported successfully, but " +
+                    "midi_event_count send failed: " +
+                    error
+                );
+
+
+                updateImportButton();
+
+                return;
+            }
 
 
             document.getElementById(
@@ -1532,7 +1568,11 @@
 
                 completedWrites +
 
-                " verified writes."
+                " verified writes. " +
+
+                "Event count sent: " +
+
+                importEventLimit
             );
 
 
@@ -1552,9 +1592,7 @@
 
 
             abortRequested = true;
-
             importing = false;
-
             waitingForResponse = false;
 
 
