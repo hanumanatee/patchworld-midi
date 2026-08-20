@@ -81,7 +81,7 @@
 
 <body>
 
-    <div id="revision">REV 6</div>
+    <div id="revision">REVISION 7</div>
 
     <h1>Patchworld MIDI Importer</h1>
 
@@ -141,6 +141,11 @@
         <div>
             <span class="label">Playable events:</span>
             <span id="eventCount">-</span>
+        </div>
+
+        <div>
+            <span class="label">Detected channels:</span>
+            <span id="channelCount">-</span>
         </div>
 
         <div>
@@ -299,9 +304,6 @@
         let responseTimer = null;
 
         let importEventLimit = 0;
-
-        // If PW sends a requested count before a MIDI file
-        // has been parsed, remember it for later.
 
         let pendingEventRequest = null;
 
@@ -519,6 +521,10 @@
 
             const events = [];
 
+            const channelsFound =
+                new Set();
+
+
             let absoluteTime = 0;
 
 
@@ -538,7 +544,6 @@
                 }
 
 
-                // IMPORTANT:
                 // Every MIDI message contributes
                 // its delta time.
 
@@ -604,6 +609,11 @@
                 }
 
 
+                channelsFound.add(
+                    channel
+                );
+
+
                 events.push({
 
                     index:
@@ -643,7 +653,10 @@
                     events,
 
                 duration:
-                    absoluteTime
+                    absoluteTime,
+
+                channelCount:
+                    channelsFound.size
             };
         }
 
@@ -969,6 +982,12 @@
 
 
                 document.getElementById(
+                    "channelCount"
+                ).textContent =
+                    result.channelCount;
+
+
+                document.getElementById(
                     "duration"
                 ).textContent =
                     result.duration
@@ -988,8 +1007,6 @@
                     parsedEvents.length > 0
                 ) {
 
-                    // Default to the complete file.
-
                     importEventLimit =
                         parsedEvents.length;
 
@@ -999,10 +1016,6 @@
                     ).textContent =
                         importEventLimit;
 
-
-                    // If Patchworld requested a
-                    // specific count before parsing,
-                    // apply it now.
 
                     if (
                         pendingEventRequest !==
@@ -1051,6 +1064,12 @@
 
                 document.getElementById(
                     "eventCount"
+                ).textContent =
+                    "-";
+
+
+                document.getElementById(
+                    "channelCount"
                 ).textContent =
                     "-";
 
@@ -1340,11 +1359,6 @@
 
             try {
 
-                // Data Array write order:
-                //
-                // 1. Index
-                // 2. Value
-
                 await PatchWorld.sendWirelessJolt(
                     info.channels.index,
                     info.index
@@ -1388,17 +1402,10 @@
             ) {
 
 
-                // ---------------------------------------------
-                // EVENT COUNT REQUEST
-                // ---------------------------------------------
-
                 if (
                     channel ===
                     CHANNELS.eventsRequested
                 ) {
-
-                    // Don't alter the size of an import
-                    // that is already in progress.
 
                     if (importing) {
                         return;
@@ -1457,10 +1464,6 @@
                 }
 
 
-                // ---------------------------------------------
-                // ACK
-                // ---------------------------------------------
-
                 if (
                     channel ===
                     CHANNELS.ack
@@ -1499,10 +1502,6 @@
                     return;
                 }
 
-
-                // ---------------------------------------------
-                // NAK
-                // ---------------------------------------------
 
                 if (
                     channel ===
@@ -1885,6 +1884,12 @@
 
                 document.getElementById(
                     "eventCount"
+                ).textContent =
+                    "-";
+
+
+                document.getElementById(
+                    "channelCount"
                 ).textContent =
                     "-";
 
