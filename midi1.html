@@ -81,7 +81,7 @@
 
 <body>
 
-    <div id="revision">REVISION 7</div>
+    <div id="revision">REV 8</div>
 
     <h1>Patchworld MIDI Importer</h1>
 
@@ -647,6 +647,16 @@
             }
 
 
+            const channelList =
+                Array.from(
+                    channelsFound
+                )
+                .sort(
+                    (a, b) =>
+                        a - b
+                );
+
+
             return {
 
                 events:
@@ -656,7 +666,10 @@
                     absoluteTime,
 
                 channelCount:
-                    channelsFound.size
+                    channelList.length,
+
+                channels:
+                    channelList
             };
         }
 
@@ -984,7 +997,10 @@
                 document.getElementById(
                     "channelCount"
                 ).textContent =
-                    result.channelCount;
+                    result.channelCount +
+                    " (" +
+                    result.channels.join(", ") +
+                    ")";
 
 
                 document.getElementById(
