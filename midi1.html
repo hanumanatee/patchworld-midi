@@ -33,8 +33,7 @@
         }
 
         button,
-        select,
-        input[type="number"] {
+        select {
             font-size: 18px;
             padding: 10px 18px;
             margin-top: 10px;
@@ -45,8 +44,11 @@
             min-width: 320px;
         }
 
-        input[type="number"] {
-            width: 140px;
+        #eventLimit {
+            font-family: monospace;
+            font-size: 22px;
+            font-weight: bold;
+            color: #ffffff;
         }
 
         pre {
@@ -79,11 +81,12 @@
 
 <body>
 
-    <div id="revision">REV 5</div>
+    <div id="revision">REV 6</div>
 
     <h1>Patchworld MIDI Importer</h1>
 
     <div class="section">
+
         <div>
             <span class="label">Bridge:</span>
             <span id="bridgeStatus">Waiting...</span>
@@ -93,6 +96,7 @@
             <span class="label">Wireless:</span>
             <span id="wirelessStatus">Not subscribed</span>
         </div>
+
     </div>
 
 
@@ -141,15 +145,7 @@
 
         <div>
             <span class="label">Events to import:</span>
-
-            <input
-                type="number"
-                id="eventLimit"
-                min="1"
-                step="1"
-                value="1"
-                disabled
-            >
+            <span id="eventLimit">-</span>
         </div>
 
         <div>
@@ -196,8 +192,11 @@
 
 
     <div class="section">
+
         <div class="label">Parsed event preview:</div>
+
         <pre id="preview">No MIDI loaded yet.</pre>
+
     </div>
 
 
@@ -247,10 +246,17 @@
                 value: "midi_channel_value"
             },
 
-            ack: "midi_ack",
-            nak: "midi_nak",
+            ack:
+                "midi_ack",
 
-            eventCount: "midi_event_count"
+            nak:
+                "midi_nak",
+
+            eventCount:
+                "midi_event_count",
+
+            eventsRequested:
+                "midi_events_requested"
         };
 
 
@@ -294,6 +300,11 @@
 
         let importEventLimit = 0;
 
+        // If PW sends a requested count before a MIDI file
+        // has been parsed, remember it for later.
+
+        let pendingEventRequest = null;
+
 
         // =========================================================
         // MIDI FILE LIST
@@ -302,10 +313,14 @@
         async function loadFileList() {
 
             const select =
-                document.getElementById("fileSelect");
+                document.getElementById(
+                    "fileSelect"
+                );
 
             const loadButton =
-                document.getElementById("loadButton");
+                document.getElementById(
+                    "loadButton"
+                );
 
 
             try {
@@ -339,8 +354,14 @@
                 const files =
                     text
                         .split(/\r?\n/)
-                        .map(line => line.trim())
-                        .filter(line => line.length > 0);
+                        .map(
+                            line =>
+                                line.trim()
+                        )
+                        .filter(
+                            line =>
+                                line.length > 0
+                        );
 
 
                 select.innerHTML = "";
@@ -349,12 +370,16 @@
                 if (files.length === 0) {
 
                     const option =
-                        document.createElement("option");
+                        document.createElement(
+                            "option"
+                        );
 
                     option.textContent =
                         "No MIDI files listed";
 
-                    select.appendChild(option);
+                    select.appendChild(
+                        option
+                    );
 
                     select.disabled = true;
                     loadButton.disabled = true;
@@ -370,7 +395,9 @@
                 for (const filename of files) {
 
                     const option =
-                        document.createElement("option");
+                        document.createElement(
+                            "option"
+                        );
 
                     option.value =
                         filename;
@@ -378,7 +405,9 @@
                     option.textContent =
                         filename;
 
-                    select.appendChild(option);
+                    select.appendChild(
+                        option
+                    );
                 }
 
 
@@ -421,16 +450,22 @@
 
         function extractDeltaTime(line) {
 
-            const match = line.match(
-                /\btime=([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)/
-            );
+            const match =
+                line.match(
+                    /\btime=([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)/
+                );
+
 
             if (!match) {
                 return 0;
             }
 
+
             const value =
-                Number(match[1]);
+                Number(
+                    match[1]
+                );
+
 
             return Number.isFinite(value)
                 ? value
@@ -438,7 +473,10 @@
         }
 
 
-        function extractNumber(line, fieldName) {
+        function extractNumber(
+            line,
+            fieldName
+        ) {
 
             const expression =
                 new RegExp(
@@ -449,7 +487,9 @@
 
 
             const match =
-                line.match(expression);
+                line.match(
+                    expression
+                );
 
 
             if (!match) {
@@ -458,7 +498,9 @@
 
 
             const value =
-                Number(match[1]);
+                Number(
+                    match[1]
+                );
 
 
             return Number.isFinite(value)
@@ -470,36 +512,58 @@
         function parseMidiText(text) {
 
             const lines =
-                text.split(/\r?\n/);
+                text.split(
+                    /\r?\n/
+                );
+
 
             const events = [];
 
             let absoluteTime = 0;
 
 
-            for (const rawLine of lines) {
+            for (
+                const rawLine
+                of lines
+            ) {
 
                 const line =
                     rawLine.trim();
 
 
-                if (line.length === 0) {
+                if (
+                    line.length === 0
+                ) {
                     continue;
                 }
 
 
+                // IMPORTANT:
+                // Every MIDI message contributes
+                // its delta time.
+
                 absoluteTime +=
-                    extractDeltaTime(line);
+                    extractDeltaTime(
+                        line
+                    );
 
 
                 const isNoteOn =
-                    line.startsWith("note_on ");
+                    line.startsWith(
+                        "note_on "
+                    );
+
 
                 const isNoteOff =
-                    line.startsWith("note_off ");
+                    line.startsWith(
+                        "note_off "
+                    );
 
 
-                if (!isNoteOn && !isNoteOff) {
+                if (
+                    !isNoteOn &&
+                    !isNoteOff
+                ) {
                     continue;
                 }
 
@@ -510,11 +574,13 @@
                         "channel"
                     );
 
+
                 const note =
                     extractNumber(
                         line,
                         "note"
                     );
+
 
                 const velocity =
                     extractNumber(
@@ -546,8 +612,15 @@
                     time:
                         absoluteTime,
 
+                    // Existing PW convention:
+                    //
+                    // 5 = Note On
+                    // 6 = Note Off
+
                     type:
-                        isNoteOn ? 5 : 6,
+                        isNoteOn
+                        ? 5
+                        : 6,
 
                     note:
                         note,
@@ -587,6 +660,7 @@
                     20
                 );
 
+
             const lines = [];
 
 
@@ -608,14 +682,22 @@
 
                 lines.push(
 
-                    String(e.index)
-                        .padStart(3, " ") +
+                    String(
+                        e.index
+                    )
+                    .padStart(
+                        3,
+                        " "
+                    ) +
 
                     "   t=" +
 
                     e.time
-                        .toFixed(6)
-                        .padStart(10, " ") +
+                    .toFixed(6)
+                    .padStart(
+                        10,
+                        " "
+                    ) +
 
                     "   " +
 
@@ -633,18 +715,26 @@
             }
 
 
-            if (events.length > count) {
+            if (
+                events.length >
+                count
+            ) {
 
                 lines.push(
                     "",
                     "... " +
-                    (events.length - count) +
+                    (
+                        events.length -
+                        count
+                    ) +
                     " more events"
                 );
             }
 
 
-            return lines.join("\n");
+            return lines.join(
+                "\n"
+            );
         }
 
 
@@ -652,30 +742,33 @@
         // EVENT LIMIT
         // =========================================================
 
-        function getEventLimit() {
+        function setEventLimit(
+            requestedValue
+        ) {
 
-            if (parsedEvents.length === 0) {
-                return 0;
+            if (
+                parsedEvents.length === 0
+            ) {
+
+                pendingEventRequest =
+                    requestedValue;
+
+                return;
             }
 
 
-            const input =
-                document.getElementById(
-                    "eventLimit"
-                );
-
-
             let value =
-                parseInt(
-                    input.value,
-                    10
+                Math.floor(
+                    Number(
+                        requestedValue
+                    )
                 );
 
 
-            if (!Number.isFinite(value)) {
-
-                value =
-                    parsedEvents.length;
+            if (
+                !Number.isFinite(value)
+            ) {
+                return;
             }
 
 
@@ -689,17 +782,26 @@
                 );
 
 
-            input.value =
+            importEventLimit =
                 value;
 
 
-            return value;
+            document.getElementById(
+                "eventLimit"
+            ).textContent =
+                value;
+
+
+            updateWriteCount();
         }
 
 
         function updateWriteCount() {
 
-            if (parsedEvents.length === 0) {
+            if (
+                parsedEvents.length === 0 ||
+                importEventLimit === 0
+            ) {
 
                 document.getElementById(
                     "writesRequired"
@@ -713,7 +815,7 @@
             document.getElementById(
                 "writesRequired"
             ).textContent =
-                getEventLimit() *
+                importEventLimit *
                 FIELD_ORDER.length;
         }
 
@@ -798,7 +900,8 @@
                 );
 
 
-            button.disabled = true;
+            button.disabled =
+                true;
 
 
             setStatus(
@@ -819,12 +922,17 @@
                 const response =
                     await fetch(
 
-                        encodeURI(filename) +
+                        encodeURI(
+                            filename
+                        ) +
+
                         "?t=" +
+
                         Date.now(),
 
                         {
-                            cache: "no-store"
+                            cache:
+                                "no-store"
                         }
                     );
 
@@ -845,7 +953,9 @@
 
 
                 const result =
-                    parseMidiText(text);
+                    parseMidiText(
+                        text
+                    );
 
 
                 parsedEvents =
@@ -858,41 +968,11 @@
                     parsedEvents.length;
 
 
-                const eventLimitInput =
-                    document.getElementById(
-                        "eventLimit"
-                    );
-
-
-                if (parsedEvents.length > 0) {
-
-                    eventLimitInput.min =
-                        1;
-
-                    eventLimitInput.max =
-                        parsedEvents.length;
-
-                    eventLimitInput.value =
-                        parsedEvents.length;
-
-                    eventLimitInput.disabled =
-                        false;
-
-                } else {
-
-                    eventLimitInput.value =
-                        1;
-
-                    eventLimitInput.disabled =
-                        true;
-                }
-
-
                 document.getElementById(
                     "duration"
                 ).textContent =
                     result.duration
-                        .toFixed(6) +
+                    .toFixed(6) +
                     " seconds";
 
 
@@ -902,6 +982,55 @@
                     makePreview(
                         parsedEvents
                     );
+
+
+                if (
+                    parsedEvents.length > 0
+                ) {
+
+                    // Default to the complete file.
+
+                    importEventLimit =
+                        parsedEvents.length;
+
+
+                    document.getElementById(
+                        "eventLimit"
+                    ).textContent =
+                        importEventLimit;
+
+
+                    // If Patchworld requested a
+                    // specific count before parsing,
+                    // apply it now.
+
+                    if (
+                        pendingEventRequest !==
+                        null
+                    ) {
+
+                        const request =
+                            pendingEventRequest;
+
+                        pendingEventRequest =
+                            null;
+
+                        setEventLimit(
+                            request
+                        );
+                    }
+
+                } else {
+
+                    importEventLimit =
+                        0;
+
+
+                    document.getElementById(
+                        "eventLimit"
+                    ).textContent =
+                        "-";
+                }
 
 
                 updateWriteCount();
@@ -917,9 +1046,17 @@
 
                 parsedEvents = [];
 
+                importEventLimit = 0;
+
 
                 document.getElementById(
                     "eventCount"
+                ).textContent =
+                    "-";
+
+
+                document.getElementById(
+                    "eventLimit"
                 ).textContent =
                     "-";
 
@@ -942,12 +1079,6 @@
                     "No parsed MIDI data.";
 
 
-                document.getElementById(
-                    "eventLimit"
-                ).disabled =
-                    true;
-
-
                 setStatus(
                     "ERROR: " +
                     error.message
@@ -957,7 +1088,9 @@
 
             finally {
 
-                button.disabled = false;
+                button.disabled =
+                    false;
+
 
                 updateImportButton();
             }
@@ -988,13 +1121,19 @@
                 );
 
 
-                wirelessReady = true;
+                await PatchWorld.subscribeWifi(
+                    CHANNELS.eventsRequested
+                );
+
+
+                wirelessReady =
+                    true;
 
 
                 document.getElementById(
                     "wirelessStatus"
                 ).textContent =
-                    "ACK/NAK subscribed";
+                    "ACK/NAK/request subscribed";
 
 
                 updateImportButton();
@@ -1003,7 +1142,8 @@
 
             catch (error) {
 
-                wirelessReady = false;
+                wirelessReady =
+                    false;
 
 
                 document.getElementById(
@@ -1027,7 +1167,8 @@
         PatchWorld.onData =
             async function(context) {
 
-                bridgeReady = true;
+                bridgeReady =
+                    true;
 
 
                 document.getElementById(
@@ -1046,8 +1187,11 @@
         PatchWorld.onDisconnected =
             function() {
 
-                bridgeReady = false;
-                wirelessReady = false;
+                bridgeReady =
+                    false;
+
+                wirelessReady =
+                    false;
 
 
                 document.getElementById(
@@ -1104,10 +1248,14 @@
                     event.index,
 
                 value:
-                    event[fieldName],
+                    event[
+                        fieldName
+                    ],
 
                 channels:
-                    CHANNELS[fieldName]
+                    CHANNELS[
+                        fieldName
+                    ]
             };
         }
 
@@ -1154,7 +1302,8 @@
                 info.value;
 
 
-            waitingForResponse = true;
+            waitingForResponse =
+                true;
 
 
             clearTimeout(
@@ -1191,6 +1340,11 @@
 
             try {
 
+                // Data Array write order:
+                //
+                // 1. Index
+                // 2. Value
+
                 await PatchWorld.sendWirelessJolt(
                     info.channels.index,
                     info.index
@@ -1224,11 +1378,78 @@
 
 
         // =========================================================
-        // ACK / NAK
+        // WIRELESS RECEIVE
         // =========================================================
 
         PatchWorld.onWifiJolt =
-            function(channel, value) {
+            function(
+                channel,
+                value
+            ) {
+
+
+                // ---------------------------------------------
+                // EVENT COUNT REQUEST
+                // ---------------------------------------------
+
+                if (
+                    channel ===
+                    CHANNELS.eventsRequested
+                ) {
+
+                    // Don't alter the size of an import
+                    // that is already in progress.
+
+                    if (importing) {
+                        return;
+                    }
+
+
+                    const requested =
+                        Math.floor(
+                            Number(value)
+                        );
+
+
+                    if (
+                        !Number.isFinite(
+                            requested
+                        )
+                    ) {
+                        return;
+                    }
+
+
+                    if (
+                        parsedEvents.length === 0
+                    ) {
+
+                        pendingEventRequest =
+                            requested;
+
+
+                        setStatus(
+                            "Requested event count received: " +
+                            requested +
+                            " (waiting for MIDI file)"
+                        );
+
+                    } else {
+
+                        setEventLimit(
+                            requested
+                        );
+
+
+                        setStatus(
+                            "Events requested from Patchworld: " +
+                            importEventLimit
+                        );
+                    }
+
+
+                    return;
+                }
 
 
                 if (!importing) {
@@ -1236,12 +1457,18 @@
                 }
 
 
+                // ---------------------------------------------
+                // ACK
+                // ---------------------------------------------
+
                 if (
                     channel ===
                     CHANNELS.ack
                 ) {
 
-                    if (!waitingForResponse) {
+                    if (
+                        !waitingForResponse
+                    ) {
                         return;
                     }
 
@@ -1259,6 +1486,7 @@
 
                     completedWrites++;
 
+
                     retryForCurrentWrite =
                         0;
 
@@ -1272,12 +1500,18 @@
                 }
 
 
+                // ---------------------------------------------
+                // NAK
+                // ---------------------------------------------
+
                 if (
                     channel ===
                     CHANNELS.nak
                 ) {
 
-                    if (!waitingForResponse) {
+                    if (
+                        !waitingForResponse
+                    ) {
                         return;
                     }
 
@@ -1318,7 +1552,9 @@
                 FIELD_ORDER.length
             ) {
 
-                currentFieldIndex = 0;
+                currentFieldIndex =
+                    0;
+
                 currentEventIndex++;
             }
 
@@ -1342,9 +1578,12 @@
         // RETRY
         // =========================================================
 
-        function retryCurrentWrite(reason) {
+        function retryCurrentWrite(
+            reason
+        ) {
 
             retryForCurrentWrite++;
+
             retryCount++;
 
 
@@ -1414,30 +1653,51 @@
             if (
                 parsedEvents.length === 0 ||
                 !bridgeReady ||
-                !wirelessReady
+                !wirelessReady ||
+                importEventLimit === 0
             ) {
                 return;
             }
 
 
-            importEventLimit =
-                getEventLimit();
+            importing =
+                true;
 
 
-            importing = true;
-            abortRequested = false;
+            abortRequested =
+                false;
 
 
-            currentEventIndex = 0;
-            currentFieldIndex = 0;
+            currentEventIndex =
+                0;
 
-            completedWrites = 0;
-            ackCount = 0;
-            nakCount = 0;
-            retryCount = 0;
-            retryForCurrentWrite = 0;
 
-            waitingForResponse = false;
+            currentFieldIndex =
+                0;
+
+
+            completedWrites =
+                0;
+
+
+            ackCount =
+                0;
+
+
+            nakCount =
+                0;
+
+
+            retryCount =
+                0;
+
+
+            retryForCurrentWrite =
+                0;
+
+
+            waitingForResponse =
+                false;
 
 
             updateCounters();
@@ -1445,27 +1705,26 @@
 
             document.getElementById(
                 "importButton"
-            ).disabled = true;
+            ).disabled =
+                true;
 
 
             document.getElementById(
                 "loadButton"
-            ).disabled = true;
+            ).disabled =
+                true;
 
 
             document.getElementById(
                 "fileSelect"
-            ).disabled = true;
-
-
-            document.getElementById(
-                "eventLimit"
-            ).disabled = true;
+            ).disabled =
+                true;
 
 
             document.getElementById(
                 "abortButton"
-            ).disabled = false;
+            ).disabled =
+                false;
 
 
             setStatus(
@@ -1488,8 +1747,12 @@
             );
 
 
-            importing = false;
-            waitingForResponse = false;
+            importing =
+                false;
+
+
+            waitingForResponse =
+                false;
 
 
             try {
@@ -1503,57 +1766,16 @@
 
             catch (error) {
 
-                document.getElementById(
-                    "abortButton"
-                ).disabled = true;
-
-
-                document.getElementById(
-                    "loadButton"
-                ).disabled = false;
-
-
-                document.getElementById(
-                    "fileSelect"
-                ).disabled = false;
-
-
-                document.getElementById(
-                    "eventLimit"
-                ).disabled = false;
-
-
                 setStatus(
-                    "Arrays imported successfully, but " +
-                    "midi_event_count send failed: " +
+                    "Arrays imported, but midi_event_count send failed: " +
                     error
                 );
 
 
-                updateImportButton();
+                restoreControls();
 
                 return;
             }
-
-
-            document.getElementById(
-                "abortButton"
-            ).disabled = true;
-
-
-            document.getElementById(
-                "loadButton"
-            ).disabled = false;
-
-
-            document.getElementById(
-                "fileSelect"
-            ).disabled = false;
-
-
-            document.getElementById(
-                "eventLimit"
-            ).disabled = false;
 
 
             document.getElementById(
@@ -1576,6 +1798,34 @@
             );
 
 
+            restoreControls();
+        }
+
+
+        // =========================================================
+        // RESTORE CONTROLS
+        // =========================================================
+
+        function restoreControls() {
+
+            document.getElementById(
+                "abortButton"
+            ).disabled =
+                true;
+
+
+            document.getElementById(
+                "loadButton"
+            ).disabled =
+                false;
+
+
+            document.getElementById(
+                "fileSelect"
+            ).disabled =
+                false;
+
+
             updateImportButton();
         }
 
@@ -1591,36 +1841,24 @@
             );
 
 
-            abortRequested = true;
-            importing = false;
-            waitingForResponse = false;
+            abortRequested =
+                true;
 
 
-            document.getElementById(
-                "abortButton"
-            ).disabled = true;
+            importing =
+                false;
 
 
-            document.getElementById(
-                "loadButton"
-            ).disabled = false;
+            waitingForResponse =
+                false;
 
 
-            document.getElementById(
-                "fileSelect"
-            ).disabled = false;
+            setStatus(
+                reason
+            );
 
 
-            document.getElementById(
-                "eventLimit"
-            ).disabled =
-                parsedEvents.length === 0;
-
-
-            setStatus(reason);
-
-
-            updateImportButton();
+            restoreControls();
         }
 
 
@@ -1642,9 +1880,17 @@
 
                 parsedEvents = [];
 
+                importEventLimit = 0;
+
 
                 document.getElementById(
                     "eventCount"
+                ).textContent =
+                    "-";
+
+
+                document.getElementById(
+                    "eventLimit"
                 ).textContent =
                     "-";
 
@@ -1667,33 +1913,7 @@
                     "Selected file has not been parsed yet.";
 
 
-                document.getElementById(
-                    "eventLimit"
-                ).disabled =
-                    true;
-
-
                 updateImportButton();
-            }
-        );
-
-
-        document.getElementById(
-            "eventLimit"
-        ).addEventListener(
-            "input",
-            updateWriteCount
-        );
-
-
-        document.getElementById(
-            "eventLimit"
-        ).addEventListener(
-            "change",
-            function() {
-
-                getEventLimit();
-                updateWriteCount();
             }
         );
 
