@@ -81,7 +81,7 @@
 
 <body>
 
-    <div id="revision">REV 8</div>
+    <div id="revision">REV 9</div>
 
     <h1>Patchworld MIDI Importer</h1>
 
@@ -222,6 +222,9 @@
 
         const FILE_LIST_NAME =
             "midifiles.txt";
+
+        const MIDI_FOLDER =
+            "midi/";
 
 
         const CHANNELS = {
@@ -947,6 +950,8 @@
 
                 const response =
                     await fetch(
+
+                        MIDI_FOLDER +
 
                         encodeURI(
                             filename
