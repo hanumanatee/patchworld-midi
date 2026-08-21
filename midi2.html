@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Patchworld Direct MIDI Importer</title>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #181818;
+            color: #eeeeee;
+            margin: 30px;
+        }
+
+        h1 {
+            margin-bottom: 5px;
+        }
+
+        #revision {
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        .section {
+            margin-top: 18px;
+            padding: 14px;
+            background: #282828;
+            border-radius: 8px;
+        }
+
+        .label {
+            color: #aaaaaa;
+        }
+
+        button,
+        select {
+            font-size: 18px;
+            padding: 10px 18px;
+            margin-top: 10px;
+            margin-right: 8px;
+        }
+
+        select {
+            min-width: 320px;
+        }
+
+        pre {
+            background: #111111;
+            padding: 12px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        #status {
+            font-size: 18px;
+            margin-bottom: 8px;
+        }
+
+        .value {
+            font-family: monospace;
+        }
+
+        .good {
+            color: #69d36f;
+        }
+
+        .bad {
+            color: #ff6b6b;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="revision">MIDI2 REV 1</div>
+
+    <h1>Patchworld Direct MIDI Parser</h1>
+
+
+    <div class="section">
+
+        <div>
+            <span class="label">MIDI file:</span>
+        </div>
+
+        <select id="fileSelect" disabled>
+            <option>Loading file list...</option>
+        </select>
+
+        <br>
+
+        <button id="loadButton" disabled>
+            Load and Parse MIDI
+        </button>
+
+    </div>
+
+
+    <div class="section">
+
+        <div id="status">
+            Waiting.
+        </div>
+
+        <div>
+            <span class="label">Selected file:</span>
+            <span id="selectedFile">-</span>
+        </div>
+
+        <div>
+            <span class="label">MIDI name:</span>
+            <span id="midiName">-</span>
+        </div>
+
+        <div>
+            <span class="label">PPQ:</span>
+            <span id="ppq">-</span>
+        </div>
+
+        <div>
+            <span class="label">Parsed tracks:</span>
+            <span id="trackCount">-</span>
+        </div>
+
+        <div>
+            <span class="label">Notes:</span>
+            <span id="noteCount">-</span>
+        </div>
+
+        <div>
+            <span class="label">Playable events:</span>
+            <span id="eventCount">-</span>
+        </div>
+
+        <div>
+            <span class="label">Detected channels:</span>
+            <span id="channelCount">-</span>
+        </div>
+
+        <div>
+            <span class="label">Duration:</span>
+            <span id="duration">-</span>
+        </div>
+
+    </div>
+
+
+    <div class="section">
+
+        <div class="label">
+            Track information:
+        </div>
+
+        <pre id="trackInfo">No MIDI loaded yet.</pre>
+
+    </div>
+
+
+    <div class="section">
+
+        <div class="label">
+            First 20 generated PW events:
+        </div>
+
+        <pre id="preview">No MIDI loaded yet.</pre>
+
+    </div>
+
+
+    <!--
+        ToneJS MIDI parser.
+        This parses the binary Standard MIDI File.
+    -->
+
+    <script src="https://unpkg.com/@tonejs/midi@2.0.28/build/Midi.js"></script>
+
+
+    <script>
+
+        // =========================================================
+        // CONFIGURATION
+        // =========================================================
+
+        const FILE_LIST_NAME =
+            "midifiles.txt";
+
+        const MIDI_FOLDER =
+            "midi/";
+
+
+        // =========================================================
+        // STATE
+        // =========================================================
+
+        let parsedEvents = [];
+
+
+        // =========================================================
+        // FILE LIST
+        // =========================================================
+
+        async function loadFileList() {
+
+            const select =
+                document.getElementById(
+                    "fileSelect"
+                );
+
+            const loadButton =
+                document.getElementById(
+                    "loadButton"
+                );
+
+
+            try {
+
+                const response =
+                    await fetch(
+
+                        FILE_LIST_NAME +
+                        "?t=" +
+                        Date.now(),
+
+                        {
+                            cache: "no-store"
+                        }
+                    );
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        "HTTP " +
+                        response.status +
+                        " " +
+                        response.statusText
+                    );
+                }
+
+
+                const text =
+                    await response.text();
+
+
+                /*
+                    midifiles.txt can contain both:
+
+                        filename.mid
+                        filename.middt
+
+                    MIDI2 only displays actual binary
+                    .mid files.
+                */
+
+                const files =
+                    text
+                        .split(/\r?\n/)
+                        .map(
+                            line =>
+                                line.trim()
+                        )
+                        .filter(
+                            line =>
+                                line.length > 0 &&
+                                line
+                                    .toLowerCase()
+                                    .endsWith(".mid")
+                        );
+
+
+                select.innerHTML = "";
+
+
+                if (files.length === 0) {
+
+                    const option =
+                        document.createElement(
+                            "option"
+                        );
+
+                    option.textContent =
+                        "No .mid files listed";
+
+                    select.appendChild(
+                        option
+                    );
+
+
+                    select.disabled =
+                        true;
+
+                    loadButton.disabled =
+                        true;
+
+
+                    setStatus(
+                        "midifiles.txt contains no .mid files."
+                    );
+
+
+                    return;
+                }
+
+
+                for (const filename of files) {
+
+                    const option =
+                        document.createElement(
+                            "option"
+                        );
+
+                    option.value =
+                        filename;
+
+                    option.textContent =
+                        filename;
+
+                    select.appendChild(
+                        option
+                    );
+                }
+
+
+                select.disabled =
+                    false;
+
+                loadButton.disabled =
+                    false;
+
+
+                document.getElementById(
+                    "selectedFile"
+                ).textContent =
+                    select.value;
+
+
+                setStatus(
+                    "MIDI file list loaded."
+                );
+
+            }
+
+            catch (error) {
+
+                select.innerHTML =
+                    "<option>File list error</option>";
+
+
+                select.disabled =
+                    true;
+
+                loadButton.disabled =
+                    true;
+
+
+                setStatus(
+                    "ERROR loading midifiles.txt: " +
+                    error.message
+                );
+            }
+        }
+
+
+        // =========================================================
+        // UI
+        // =========================================================
+
+        function setStatus(text) {
+
+            document.getElementById(
+                "status"
+            ).textContent =
+                text;
+        }
+
+
+        function clearMidiDisplay() {
+
+            parsedEvents = [];
+
+
+            document.getElementById(
+                "midiName"
+            ).textContent =
+                "-";
+
+
+            document.getElementById(
+                "ppq"
+            ).textContent =
+                "-";
+
+
+            document.getElementById(
+                "trackCount"
+            ).textContent =
+                "-";
+
+
+            document.getElementById(
+                "noteCount"
+            ).textContent =
+                "-";
+
+
+            document.getElementById(
+                "eventCount"
+            ).textContent =
+                "-";
+
+
+            document.getElementById(
+                "channelCount"
+            ).textContent =
+                "-";
+
+
+            document.getElementById(
+                "duration"
+            ).textContent =
+                "-";
+
+
+            document.getElementById(
+                "trackInfo"
+            ).textContent =
+                "No MIDI loaded yet.";
+
+
+            document.getElementById(
+                "preview"
+            ).textContent =
+                "No MIDI loaded yet.";
+        }
+
+
+        // =========================================================
+        // MIDI -> PW EVENT CONVERSION
+        // =========================================================
+
+        function convertMidi(midi) {
+
+            const events = [];
+
+            const channelsFound =
+                new Set();
+
+            let totalNotes = 0;
+
+
+            midi.tracks.forEach(
+                function(
+                    track,
+                    trackIndex
+                ) {
+
+                    const channel =
+                        track.channel;
+
+
+                    if (
+                        track.notes.length > 0
+                    ) {
+
+                        channelsFound.add(
+                            channel
+                        );
+                    }
+
+
+                    track.notes.forEach(
+                        function(note) {
+
+                            totalNotes++;
+
+
+                            /*
+                                ToneJS represents note-on
+                                velocity as 0.0 - 1.0.
+
+                                Convert it back to the
+                                MIDI range 0 - 127.
+                            */
+
+                            const velocity =
+                                Math.max(
+                                    0,
+                                    Math.min(
+                                        127,
+                                        Math.round(
+                                            note.velocity *
+                                            127
+                                        )
+                                    )
+                                );
+
+
+                            // -------------------------
+                            // NOTE ON
+                            // -------------------------
+
+                            events.push({
+
+                                time:
+                                    note.time,
+
+                                type:
+                                    5,
+
+                                note:
+                                    note.midi,
+
+                                velocity:
+                                    velocity,
+
+                                channel:
+                                    channel,
+
+                                sourceTrack:
+                                    trackIndex,
+
+                                sourceType:
+                                    "note_on"
+                            });
+
+
+                            // -------------------------
+                            // NOTE OFF
+                            // -------------------------
+
+                            events.push({
+
+                                time:
+                                    note.time +
+                                    note.duration,
+
+                                type:
+                                    6,
+
+                                note:
+                                    note.midi,
+
+                                /*
+                                    ToneJS's high-level
+                                    Note object does not give
+                                    us a separate note-off
+                                    velocity.
+
+                                    For this diagnostic
+                                    version, use zero.
+                                */
+
+                                velocity:
+                                    0,
+
+                                channel:
+                                    channel,
+
+                                sourceTrack:
+                                    trackIndex,
+
+                                sourceType:
+                                    "note_off"
+                            });
+
+                        }
+                    );
+
+                }
+            );
+
+
+            /*
+                Merge events from all tracks into
+                one chronological stream.
+
+                If two events occur at exactly the
+                same time, NOTE OFF is placed before
+                NOTE ON.
+            */
+
+            events.sort(
+                function(a, b) {
+
+                    if (
+                        a.time !== b.time
+                    ) {
+
+                        return (
+                            a.time -
+                            b.time
+                        );
+                    }
+
+
+                    if (
+                        a.type !== b.type
+                    ) {
+
+                        return (
+                            b.type -
+                            a.type
+                        );
+                    }
+
+
+                    if (
+                        a.channel !== b.channel
+                    ) {
+
+                        return (
+                            a.channel -
+                            b.channel
+                        );
+                    }
+
+
+                    if (
+                        a.note !== b.note
+                    ) {
+
+                        return (
+                            a.note -
+                            b.note
+                        );
+                    }
+
+
+                    return (
+                        a.sourceTrack -
+                        b.sourceTrack
+                    );
+                }
+            );
+
+
+            /*
+                Assign Patchworld array indices
+                after all tracks have been merged.
+            */
+
+            events.forEach(
+                function(
+                    event,
+                    index
+                ) {
+
+                    event.index =
+                        index;
+                }
+            );
+
+
+            const channelList =
+                Array.from(
+                    channelsFound
+                )
+                .sort(
+                    function(a, b) {
+
+                        return (
+                            a - b
+                        );
+                    }
+                );
+
+
+            return {
+
+                events:
+                    events,
+
+                totalNotes:
+                    totalNotes,
+
+                channels:
+                    channelList
+            };
+        }
+
+
+        // =========================================================
+        // TRACK DIAGNOSTICS
+        // =========================================================
+
+        function makeTrackInfo(midi) {
+
+            const lines = [];
+
+
+            midi.tracks.forEach(
+                function(
+                    track,
+                    index
+                ) {
+
+                    lines.push(
+                        "Track " +
+                        index
+                    );
+
+
+                    lines.push(
+                        "  Name: " +
+                        (
+                            track.name ||
+                            "(none)"
+                        )
+                    );
+
+
+                    lines.push(
+                        "  Channel: " +
+                        track.channel
+                    );
+
+
+                    lines.push(
+                        "  Notes: " +
+                        track.notes.length
+                    );
+
+
+                    if (
+                        track.instrument
+                    ) {
+
+                        lines.push(
+                            "  Instrument: " +
+                            track.instrument.name +
+                            " (" +
+                            track.instrument.number +
+                            ")"
+                        );
+                    }
+
+
+                    lines.push("");
+                }
+            );
+
+
+            return lines.join(
+                "\n"
+            );
+        }
+
+
+        // =========================================================
+        // EVENT PREVIEW
+        // =========================================================
+
+        function makePreview(events) {
+
+            const count =
+                Math.min(
+                    events.length,
+                    20
+                );
+
+
+            const lines = [];
+
+
+            for (
+                let i = 0;
+                i < count;
+                i++
+            ) {
+
+                const e =
+                    events[i];
+
+
+                const typeName =
+                    e.type === 5
+                    ? "ON "
+                    : "OFF";
+
+
+                lines.push(
+
+                    String(
+                        e.index
+                    )
+                    .padStart(
+                        4,
+                        " "
+                    ) +
+
+                    "   t=" +
+
+                    e.time
+                    .toFixed(6)
+                    .padStart(
+                        11,
+                        " "
+                    ) +
+
+                    "   " +
+
+                    typeName +
+
+                    "   ch=" +
+                    e.channel +
+
+                    "   note=" +
+                    e.note +
+
+                    "   vel=" +
+                    e.velocity +
+
+                    "   track=" +
+                    e.sourceTrack
+                );
+            }
+
+
+            if (
+                events.length >
+                count
+            ) {
+
+                lines.push(
+                    "",
+                    "... " +
+                    (
+                        events.length -
+                        count
+                    ) +
+                    " more events"
+                );
+            }
+
+
+            return lines.join(
+                "\n"
+            );
+        }
+
+
+        // =========================================================
+        // LOAD BINARY MIDI
+        // =========================================================
+
+        async function loadMidiFile() {
+
+            const select =
+                document.getElementById(
+                    "fileSelect"
+                );
+
+
+            const filename =
+                select.value;
+
+
+            if (!filename) {
+                return;
+            }
+
+
+            const button =
+                document.getElementById(
+                    "loadButton"
+                );
+
+
+            button.disabled =
+                true;
+
+
+            clearMidiDisplay();
+
+
+            document.getElementById(
+                "selectedFile"
+            ).textContent =
+                filename;
+
+
+            setStatus(
+                "Loading binary MIDI: " +
+                filename +
+                "..."
+            );
+
+
+            try {
+
+                const url =
+
+                    MIDI_FOLDER +
+
+                    encodeURI(
+                        filename
+                    ) +
+
+                    "?t=" +
+
+                    Date.now();
+
+
+                const response =
+                    await fetch(
+
+                        url,
+
+                        {
+                            cache:
+                                "no-store"
+                        }
+                    );
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        "HTTP " +
+                        response.status +
+                        " " +
+                        response.statusText
+                    );
+                }
+
+
+                /*
+                    Fetch the actual binary contents
+                    of the Standard MIDI File.
+                */
+
+                const arrayBuffer =
+                    await response.arrayBuffer();
+
+
+                /*
+                    The browser build of
+                    @tonejs/midi exposes Midi
+                    globally.
+                */
+
+                const midi =
+                    new Midi(
+                        arrayBuffer
+                    );
+
+
+                const result =
+                    convertMidi(
+                        midi
+                    );
+
+
+                parsedEvents =
+                    result.events;
+
+
+                // =================================================
+                // DISPLAY RESULTS
+                // =================================================
+
+                document.getElementById(
+                    "midiName"
+                ).textContent =
+                    midi.name ||
+                    "(none)";
+
+
+                document.getElementById(
+                    "ppq"
+                ).textContent =
+                    midi.header.ppq;
+
+
+                document.getElementById(
+                    "trackCount"
+                ).textContent =
+                    midi.tracks.length;
+
+
+                document.getElementById(
+                    "noteCount"
+                ).textContent =
+                    result.totalNotes;
+
+
+                document.getElementById(
+                    "eventCount"
+                ).textContent =
+                    parsedEvents.length;
+
+
+                document.getElementById(
+                    "channelCount"
+                ).textContent =
+
+                    result.channels.length +
+
+                    " (" +
+
+                    result.channels.join(
+                        ", "
+                    ) +
+
+                    ")";
+
+
+                document.getElementById(
+                    "duration"
+                ).textContent =
+                    midi.duration
+                        .toFixed(6) +
+                    " seconds";
+
+
+                document.getElementById(
+                    "trackInfo"
+                ).textContent =
+                    makeTrackInfo(
+                        midi
+                    );
+
+
+                document.getElementById(
+                    "preview"
+                ).textContent =
+                    makePreview(
+                        parsedEvents
+                    );
+
+
+                setStatus(
+                    "Binary MIDI parsed successfully."
+                );
+
+            }
+
+            catch (error) {
+
+                console.error(
+                    error
+                );
+
+
+                setStatus(
+                    "ERROR: " +
+                    error.message
+                );
+
+
+                document.getElementById(
+                    "preview"
+                ).textContent =
+                    String(
+                        error.stack ||
+                        error
+                    );
+            }
+
+            finally {
+
+                button.disabled =
+                    false;
+            }
+        }
+
+
+        // =========================================================
+        // UI EVENTS
+        // =========================================================
+
+        document.getElementById(
+            "fileSelect"
+        ).addEventListener(
+            "change",
+            function() {
+
+                clearMidiDisplay();
+
+
+                document.getElementById(
+                    "selectedFile"
+                ).textContent =
+                    this.value;
+
+
+                setStatus(
+                    "Selected file has not been parsed yet."
+                );
+            }
+        );
+
+
+        document.getElementById(
+            "loadButton"
+        ).addEventListener(
+            "click",
+            loadMidiFile
+        );
+
+
+        // =========================================================
+        // INITIALIZE
+        // =========================================================
+
+        loadFileList();
+
+    </script>
+
+</body>
+</html>
