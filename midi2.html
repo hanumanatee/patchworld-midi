@@ -80,7 +80,7 @@
 
 <body>
 
-<div id="revision">MIDI2 REV 2</div>
+<div id="revision">MIDI2 REV 3</div>
 
 <h1>Patchworld Direct MIDI Importer</h1>
 
@@ -328,7 +328,13 @@ const CHANNELS = {
         "midi_event_count",
 
     eventsRequested:
-        "midi_events_requested"
+        "midi_events_requested",
+
+    abortImport:
+        "midi_abort_import",
+
+    importProgress:
+        "midi_import_progress"
 };
 
 
@@ -1373,6 +1379,11 @@ async function subscribeToResponses() {
         );
 
 
+        await PatchWorld.subscribeWifi(
+            CHANNELS.abortImport
+        );
+
+
         wirelessReady =
             true;
 
@@ -1380,7 +1391,7 @@ async function subscribeToResponses() {
         document.getElementById(
             "wirelessStatus"
         ).textContent =
-            "ACK/NAK/request subscribed";
+            "ACK/NAK/request/abort subscribed";
 
 
         updateImportButton();
@@ -1622,7 +1633,7 @@ async function sendCurrentWrite() {
 
 
 // =============================================================
-// RECEIVE ACK / NAK / EVENT REQUEST
+// RECEIVE ACK / NAK / REQUEST / ABORT
 // =============================================================
 
 PatchWorld.onWifiJolt =
@@ -1630,6 +1641,26 @@ PatchWorld.onWifiJolt =
         channel,
         value
     ) {
+
+
+        // ---------------------------------------------------------
+        // ABORT IMPORT FROM PATCHWORLD
+        // ---------------------------------------------------------
+
+        if (
+            channel ===
+            CHANNELS.abortImport
+        ) {
+
+            if (importing) {
+
+                stopImport(
+                    "Import aborted from Patchworld."
+                );
+            }
+
+            return;
+        }
 
 
         // ---------------------------------------------------------
@@ -1788,10 +1819,14 @@ PatchWorld.onWifiJolt =
 // ADVANCE TO NEXT WRITE
 // =============================================================
 
-function advanceToNextWrite() {
+async function advanceToNextWrite() {
 
     currentFieldIndex++;
 
+
+    // ---------------------------------------------------------
+    // ONE COMPLETE EVENT HAS NOW BEEN VERIFIED
+    // ---------------------------------------------------------
 
     if (
         currentFieldIndex >=
@@ -1802,6 +1837,48 @@ function advanceToNextWrite() {
             0;
 
         currentEventIndex++;
+
+
+        /*
+            currentEventIndex now also equals the
+            number of completely stored events.
+
+            Progress is therefore:
+
+                completed events / requested events
+
+            The value ranges from 0 to 1.
+        */
+
+        const progress =
+            currentEventIndex /
+            importEventLimit;
+
+
+        /*
+            Progress is informational, not part of
+            the verified array-write protocol.
+
+            We therefore do not wait for an ACK and
+            do not retry a failed progress message.
+        */
+
+        try {
+
+            await PatchWorld.sendWirelessJolt(
+                CHANNELS.importProgress,
+                progress
+            );
+
+        }
+
+        catch (error) {
+
+            console.warn(
+                "Failed to send MIDI import progress:",
+                error
+            );
+        }
     }
 
 
@@ -1979,6 +2056,26 @@ function startImport() {
     );
 
 
+    /*
+        Reset Patchworld's progress indicator.
+
+        This message is informational and is not
+        part of the ACK/NAK protocol.
+    */
+
+    PatchWorld.sendWirelessJolt(
+        CHANNELS.importProgress,
+        0
+    ).catch(
+
+        error =>
+            console.warn(
+                "Failed to send initial MIDI progress:",
+                error
+            )
+    );
+
+
     sendCurrentWrite();
 }
 
@@ -2098,6 +2195,18 @@ function stopImport(reason) {
 
     waitingForResponse =
         false;
+
+
+    /*
+        Deliberately do NOT:
+
+        - clear any arrays
+        - reset midi_import_progress
+        - send midi_event_count
+
+        This leaves the partially imported data and
+        last reported progress intact for diagnosis.
+    */
 
 
     setStatus(
