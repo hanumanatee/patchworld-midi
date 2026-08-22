@@ -80,14 +80,10 @@
 
 <body>
 
-<div id="revision">MIDI2 REV 3</div>
+<div id="revision">MIDI2 REV 4</div>
 
 <h1>Patchworld Direct MIDI Importer</h1>
 
-
-<!-- ========================================================= -->
-<!-- PATCHWORLD CONNECTION                                     -->
-<!-- ========================================================= -->
 
 <div class="section">
 
@@ -103,10 +99,6 @@
 
 </div>
 
-
-<!-- ========================================================= -->
-<!-- FILE SELECTION                                            -->
-<!-- ========================================================= -->
 
 <div class="section">
 
@@ -134,10 +126,6 @@
 
 </div>
 
-
-<!-- ========================================================= -->
-<!-- MIDI INFORMATION                                          -->
-<!-- ========================================================= -->
 
 <div class="section">
 
@@ -198,10 +186,6 @@
 </div>
 
 
-<!-- ========================================================= -->
-<!-- IMPORT STATUS                                             -->
-<!-- ========================================================= -->
-
 <div class="section">
 
     <div>
@@ -232,10 +216,6 @@
 </div>
 
 
-<!-- ========================================================= -->
-<!-- DIAGNOSTICS                                               -->
-<!-- ========================================================= -->
-
 <div class="section">
 
     <div class="label">
@@ -258,16 +238,8 @@
 </div>
 
 
-<!-- ========================================================= -->
-<!-- MIDI PARSER                                               -->
-<!-- ========================================================= -->
-
 <script src="https://unpkg.com/@tonejs/midi@2.0.28/build/Midi.js"></script>
 
-
-<!-- ========================================================= -->
-<!-- PATCHWORLD BRIDGE                                         -->
-<!-- ========================================================= -->
 
 <script>
     document.write(
@@ -279,10 +251,6 @@
 
 
 <script>
-
-// =============================================================
-// CONFIGURATION
-// =============================================================
 
 const FILE_LIST_NAME =
     "midifiles.txt";
@@ -352,10 +320,6 @@ const MAX_RETRIES = 5;
 const ACK_TIMEOUT_MS = 2000;
 
 
-// =============================================================
-// STATE
-// =============================================================
-
 let parsedEvents = [];
 
 let bridgeReady = false;
@@ -414,6 +378,41 @@ function updateCounters() {
         "retryCount"
     ).textContent =
         retryCount;
+}
+
+
+function resetImportStats() {
+
+    completedWrites = 0;
+    ackCount = 0;
+    nakCount = 0;
+    retryCount = 0;
+    retryForCurrentWrite = 0;
+
+    document.getElementById(
+        "currentWrite"
+    ).textContent =
+        "-";
+
+    document.getElementById(
+        "completedWrites"
+    ).textContent =
+        "0";
+
+    document.getElementById(
+        "ackCount"
+    ).textContent =
+        "0";
+
+    document.getElementById(
+        "nakCount"
+    ).textContent =
+        "0";
+
+    document.getElementById(
+        "retryCount"
+    ).textContent =
+        "0";
 }
 
 
@@ -681,8 +680,6 @@ function convertMidi(midi) {
                         );
 
 
-                    // NOTE ON
-
                     events.push({
 
                         time:
@@ -707,8 +704,6 @@ function convertMidi(midi) {
                             "note_on"
                     });
 
-
-                    // NOTE OFF
 
                     events.push({
 
@@ -742,8 +737,6 @@ function convertMidi(midi) {
     );
 
 
-    // Merge all tracks chronologically.
-
     events.sort(
         function(a, b) {
 
@@ -757,9 +750,6 @@ function convertMidi(midi) {
                 );
             }
 
-
-            // NOTE OFF before NOTE ON
-            // at identical timestamps.
 
             if (
                 a.type !== b.type
@@ -1110,6 +1100,8 @@ async function loadMidiFile() {
     button.disabled =
         true;
 
+
+    resetImportStats();
 
     clearMidiDisplay();
 
@@ -1643,10 +1635,6 @@ PatchWorld.onWifiJolt =
     ) {
 
 
-        // ---------------------------------------------------------
-        // ABORT IMPORT FROM PATCHWORLD
-        // ---------------------------------------------------------
-
         if (
             channel ===
             CHANNELS.abortImport
@@ -1662,10 +1650,6 @@ PatchWorld.onWifiJolt =
             return;
         }
 
-
-        // ---------------------------------------------------------
-        // EVENT COUNT REQUEST FROM PATCHWORLD
-        // ---------------------------------------------------------
 
         if (
             channel ===
@@ -1732,10 +1716,6 @@ PatchWorld.onWifiJolt =
         }
 
 
-        // ---------------------------------------------------------
-        // ACK
-        // ---------------------------------------------------------
-
         if (
             channel ===
             CHANNELS.ack
@@ -1775,10 +1755,6 @@ PatchWorld.onWifiJolt =
             return;
         }
 
-
-        // ---------------------------------------------------------
-        // NAK
-        // ---------------------------------------------------------
 
         if (
             channel ===
@@ -1824,10 +1800,6 @@ async function advanceToNextWrite() {
     currentFieldIndex++;
 
 
-    // ---------------------------------------------------------
-    // ONE COMPLETE EVENT HAS NOW BEEN VERIFIED
-    // ---------------------------------------------------------
-
     if (
         currentFieldIndex >=
         FIELD_ORDER.length
@@ -1839,29 +1811,10 @@ async function advanceToNextWrite() {
         currentEventIndex++;
 
 
-        /*
-            currentEventIndex now also equals the
-            number of completely stored events.
-
-            Progress is therefore:
-
-                completed events / requested events
-
-            The value ranges from 0 to 1.
-        */
-
         const progress =
             currentEventIndex /
             importEventLimit;
 
-
-        /*
-            Progress is informational, not part of
-            the verified array-write protocol.
-
-            We therefore do not wait for an ACK and
-            do not retry a failed progress message.
-        */
 
         try {
 
@@ -2056,13 +2009,6 @@ function startImport() {
     );
 
 
-    /*
-        Reset Patchworld's progress indicator.
-
-        This message is informational and is not
-        part of the ACK/NAK protocol.
-    */
-
     PatchWorld.sendWirelessJolt(
         CHANNELS.importProgress,
         0
@@ -2197,18 +2143,6 @@ function stopImport(reason) {
         false;
 
 
-    /*
-        Deliberately do NOT:
-
-        - clear any arrays
-        - reset midi_import_progress
-        - send midi_event_count
-
-        This leaves the partially imported data and
-        last reported progress intact for diagnosis.
-    */
-
-
     setStatus(
         reason
     );
@@ -2231,6 +2165,8 @@ document.getElementById(
     function() {
 
         clearMidiDisplay();
+
+        resetImportStats();
 
 
         document.getElementById(
