@@ -87,7 +87,7 @@
 
 <body>
 
-<div id="revision">MIDI2 REV 5</div>
+<div id="revision">MIDI2 REV 6</div>
 
 <h1>Patchworld Direct MIDI Importer</h1>
 
@@ -116,7 +116,7 @@
     </div>
 
     <select id="fileSelect" disabled>
-        <option>Loading file list...</option>
+        <option>Loading MIDI directory...</option>
     </select>
 
     <br>
@@ -261,11 +261,42 @@
 
 <script>
 
-const FILE_LIST_NAME =
-    "midifiles.txt";
+// =============================================================
+// CONFIGURATION
+// =============================================================
+
+const GITHUB_OWNER =
+    "tmgsabide";
+
+const GITHUB_REPOSITORY =
+    "patchworld-midi";
+
+const GITHUB_BRANCH =
+    "main";
 
 const MIDI_FOLDER =
-    "midi/";
+    "midi";
+
+
+const GITHUB_API_URL =
+    "https://api.github.com/repos/" +
+    GITHUB_OWNER +
+    "/" +
+    GITHUB_REPOSITORY +
+    "/contents/" +
+    MIDI_FOLDER +
+    "?ref=" +
+    GITHUB_BRANCH;
+
+
+const MIDI_BASE_URL =
+    "https://" +
+    GITHUB_OWNER +
+    ".github.io/" +
+    GITHUB_REPOSITORY +
+    "/" +
+    MIDI_FOLDER +
+    "/";
 
 
 const CHANNELS = {
@@ -328,6 +359,10 @@ const MAX_RETRIES = 5;
 
 const ACK_TIMEOUT_MS = 2000;
 
+
+// =============================================================
+// STATE
+// =============================================================
 
 let parsedEvents = [];
 
@@ -403,25 +438,7 @@ function resetImportStats() {
     ).textContent =
         "-";
 
-    document.getElementById(
-        "completedWrites"
-    ).textContent =
-        "0";
-
-    document.getElementById(
-        "ackCount"
-    ).textContent =
-        "0";
-
-    document.getElementById(
-        "nakCount"
-    ).textContent =
-        "0";
-
-    document.getElementById(
-        "retryCount"
-    ).textContent =
-        "0";
+    updateCounters();
 }
 
 
@@ -496,10 +513,10 @@ function clearMidiDisplay() {
 
 
 // =============================================================
-// FILE LIST
+// GITHUB MIDI DIRECTORY
 // =============================================================
 
-async function loadFileList() {
+async function loadMidiDirectory() {
 
     const select =
         document.getElementById(
@@ -514,15 +531,25 @@ async function loadFileList() {
 
     try {
 
+        setStatus(
+            "Reading MIDI directory..."
+        );
+
+
         const response =
             await fetch(
 
-                FILE_LIST_NAME +
-                "?t=" +
+                GITHUB_API_URL +
+                "&t=" +
                 Date.now(),
 
                 {
-                    cache: "no-store"
+                    cache: "no-store",
+
+                    headers: {
+                        "Accept":
+                            "application/vnd.github+json"
+                    }
                 }
             );
 
@@ -530,7 +557,7 @@ async function loadFileList() {
         if (!response.ok) {
 
             throw new Error(
-                "HTTP " +
+                "GitHub API HTTP " +
                 response.status +
                 " " +
                 response.statusText
@@ -538,30 +565,55 @@ async function loadFileList() {
         }
 
 
-        const text =
-            await response.text();
+        const entries =
+            await response.json();
+
+
+        if (
+            !Array.isArray(entries)
+        ) {
+
+            throw new Error(
+                "Unexpected GitHub directory response."
+            );
+        }
 
 
         const files =
-            text
-                .split(/\r?\n/)
-                .map(
-                    line =>
-                        line.trim()
-                )
+            entries
                 .filter(
-                    line =>
-                        line.length > 0 &&
-                        line
+                    entry =>
+                        entry.type === "file" &&
+                        typeof entry.name === "string" &&
+                        entry.name
                             .toLowerCase()
                             .endsWith(".mid")
+                )
+                .map(
+                    entry =>
+                        entry.name
+                )
+                .sort(
+                    function(a, b) {
+
+                        return a.localeCompare(
+                            b,
+                            undefined,
+                            {
+                                numeric: true,
+                                sensitivity: "base"
+                            }
+                        );
+                    }
                 );
 
 
         select.innerHTML = "";
 
 
-        if (files.length === 0) {
+        if (
+            files.length === 0
+        ) {
 
             const option =
                 document.createElement(
@@ -569,24 +621,33 @@ async function loadFileList() {
                 );
 
             option.textContent =
-                "No .mid files listed";
+                "No .mid files found";
 
             select.appendChild(
                 option
             );
 
-            select.disabled = true;
-            loadButton.disabled = true;
+
+            select.disabled =
+                true;
+
+            loadButton.disabled =
+                true;
+
 
             setStatus(
-                "midifiles.txt contains no .mid files."
+                "No .mid files found in the GitHub midi folder."
             );
+
 
             return;
         }
 
 
-        for (const filename of files) {
+        for (
+            const filename
+            of files
+        ) {
 
             const option =
                 document.createElement(
@@ -605,8 +666,12 @@ async function loadFileList() {
         }
 
 
-        select.disabled = false;
-        loadButton.disabled = false;
+        select.disabled =
+            false;
+
+        loadButton.disabled =
+            false;
+
 
         document.getElementById(
             "selectedFile"
@@ -615,21 +680,38 @@ async function loadFileList() {
 
 
         setStatus(
-            "MIDI file list loaded."
+            files.length +
+            " MIDI file" +
+            (
+                files.length === 1
+                ? ""
+                : "s"
+            ) +
+            " found."
         );
 
     }
 
     catch (error) {
 
-        select.innerHTML =
-            "<option>File list error</option>";
+        console.error(
+            error
+        );
 
-        select.disabled = true;
-        loadButton.disabled = true;
+
+        select.innerHTML =
+            "<option>MIDI directory error</option>";
+
+
+        select.disabled =
+            true;
+
+        loadButton.disabled =
+            true;
+
 
         setStatus(
-            "ERROR loading midifiles.txt: " +
+            "ERROR reading MIDI directory: " +
             error.message
         );
     }
@@ -1132,7 +1214,7 @@ async function loadMidiFile() {
 
         const url =
 
-            MIDI_FOLDER +
+            MIDI_BASE_URL +
 
             encodeURI(
                 filename
@@ -2226,7 +2308,7 @@ document.getElementById(
 // INITIALIZE
 // =============================================================
 
-loadFileList();
+loadMidiDirectory();
 
 </script>
 
