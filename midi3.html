@@ -93,7 +93,7 @@
 
 <body>
 
-<div id="revision">MIDI3 REV 1</div>
+<div id="revision">MIDI3 REV 2</div>
 
 <h1>Patchworld Direct MIDI Importer</h1>
 
@@ -322,14 +322,14 @@ const CHANNELS = {
         value: "midi_type_value"
     },
 
-    note: {
-        index: "midi_note_index",
-        value: "midi_note_value"
+    data1: {
+        index: "midi_data1_index",
+        value: "midi_data1_value"
     },
 
-    velocity: {
-        index: "midi_velocity_index",
-        value: "midi_velocity_value"
+    data2: {
+        index: "midi_data2_index",
+        value: "midi_data2_value"
     },
 
     channel: {
@@ -363,8 +363,8 @@ const CHANNELS = {
 const FIELD_ORDER = [
     "time",
     "type",
-    "note",
-    "velocity",
+    "data1",
+    "data2",
     "channel"
 ];
 
@@ -735,7 +735,7 @@ async function loadMidiDirectory() {
 
 
 // =============================================================
-// DIRECT MIDI -> PW EVENTS
+// DIRECT MIDI -> GENERIC PW EVENTS
 // =============================================================
 
 function convertMidi(midi) {
@@ -774,6 +774,13 @@ function convertMidi(midi) {
                     totalNotes++;
 
 
+                    /*
+                        ToneJS note-on velocity is normalized
+                        to 0.0 - 1.0.
+
+                        Convert back to MIDI 0 - 127.
+                    */
+
                     const velocity =
                         Math.max(
                             0,
@@ -787,18 +794,25 @@ function convertMidi(midi) {
                         );
 
 
+                    // =================================================
+                    // EVENT TYPE 0 = NOTE ON
+                    //
+                    // Data 1 = MIDI note number
+                    // Data 2 = velocity
+                    // =================================================
+
                     events.push({
 
                         time:
                             note.time,
 
                         type:
-                            5,
+                            0,
 
-                        note:
+                        data1:
                             note.midi,
 
-                        velocity:
+                        data2:
                             velocity,
 
                         channel:
@@ -812,6 +826,17 @@ function convertMidi(midi) {
                     });
 
 
+                    // =================================================
+                    // EVENT TYPE 1 = NOTE OFF
+                    //
+                    // Data 1 = MIDI note number
+                    // Data 2 = release velocity
+                    //
+                    // ToneJS does not expose release velocity
+                    // through its high-level Note representation,
+                    // so Data 2 remains 0 for now.
+                    // =================================================
+
                     events.push({
 
                         time:
@@ -819,12 +844,12 @@ function convertMidi(midi) {
                             note.duration,
 
                         type:
-                            6,
+                            1,
 
-                        note:
+                        data1:
                             note.midi,
 
-                        velocity:
+                        data2:
                             0,
 
                         channel:
@@ -844,6 +869,10 @@ function convertMidi(midi) {
     );
 
 
+    /*
+        Merge all tracks chronologically.
+    */
+
     events.sort(
         function(a, b) {
 
@@ -857,6 +886,17 @@ function convertMidi(midi) {
                 );
             }
 
+
+            /*
+                NOTE OFF before NOTE ON when two events
+                have exactly the same timestamp.
+
+                Type 1 = NOTE OFF
+                Type 0 = NOTE ON
+
+                Therefore descending type order places
+                type 1 before type 0.
+            */
 
             if (
                 a.type !== b.type
@@ -881,12 +921,12 @@ function convertMidi(midi) {
 
 
             if (
-                a.note !== b.note
+                a.data1 !== b.data1
             ) {
 
                 return (
-                    a.note -
-                    b.note
+                    a.data1 -
+                    b.data1
                 );
             }
 
@@ -898,6 +938,10 @@ function convertMidi(midi) {
         }
     );
 
+
+    /*
+        Assign final MIDI Flash array indices.
+    */
 
     events.forEach(
         function(
@@ -1025,10 +1069,27 @@ function makePreview(events) {
         const e =
             events[i];
 
-        const typeName =
-            e.type === 5
-            ? "ON "
-            : "OFF";
+
+        let typeName =
+            "TYPE " +
+            e.type;
+
+
+        if (
+            e.type === 0
+        ) {
+
+            typeName =
+                "NOTE ON ";
+        }
+
+        else if (
+            e.type === 1
+        ) {
+
+            typeName =
+                "NOTE OFF";
+        }
 
 
         lines.push(
@@ -1057,11 +1118,11 @@ function makePreview(events) {
             "   ch=" +
             e.channel +
 
-            "   note=" +
-            e.note +
+            "   data1=" +
+            e.data1 +
 
-            "   vel=" +
-            e.velocity +
+            "   data2=" +
+            e.data2 +
 
             "   track=" +
             e.sourceTrack
@@ -1755,6 +1816,10 @@ PatchWorld.onWifiJolt =
     ) {
 
 
+        // ---------------------------------------------------------
+        // MIDI FLASH COMMUNICATION CHANNEL
+        // ---------------------------------------------------------
+
         if (
             channel ===
             CHANNELS.comChannel
@@ -1809,6 +1874,10 @@ PatchWorld.onWifiJolt =
         }
 
 
+        // ---------------------------------------------------------
+        // ABORT IMPORT FROM PATCHWORLD
+        // ---------------------------------------------------------
+
         if (
             channel ===
             CHANNELS.abortImport
@@ -1824,6 +1893,10 @@ PatchWorld.onWifiJolt =
             return;
         }
 
+
+        // ---------------------------------------------------------
+        // EVENT COUNT REQUEST FROM PATCHWORLD
+        // ---------------------------------------------------------
 
         if (
             channel ===
@@ -1890,6 +1963,10 @@ PatchWorld.onWifiJolt =
         }
 
 
+        // ---------------------------------------------------------
+        // ACK
+        // ---------------------------------------------------------
+
         if (
             channel ===
             CHANNELS.ack
@@ -1929,6 +2006,10 @@ PatchWorld.onWifiJolt =
             return;
         }
 
+
+        // ---------------------------------------------------------
+        // NAK
+        // ---------------------------------------------------------
 
         if (
             channel ===
@@ -1973,6 +2054,11 @@ async function advanceToNextWrite() {
 
     currentFieldIndex++;
 
+
+    /*
+        A complete MIDI Flash event has been stored
+        after all five field writes have ACKed.
+    */
 
     if (
         currentFieldIndex >=
