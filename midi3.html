@@ -51,16 +51,15 @@
             min-width: 320px;
         }
 
-        #eventLimit {
+        #eventLimit,
+        #comChannel {
             font-family: monospace;
             font-size: 22px;
             font-weight: bold;
         }
 
-        #comChannel {
+        #eventTypeCounts {
             font-family: monospace;
-            font-size: 22px;
-            font-weight: bold;
         }
 
         pre {
@@ -93,7 +92,7 @@
 
 <body>
 
-<div id="revision">MIDI3 REV 2</div>
+<div id="revision">MIDI3 REV 3</div>
 
 <h1>Patchworld Direct MIDI Importer</h1>
 
@@ -181,6 +180,11 @@
     <div>
         <span class="label">Playable events:</span>
         <span id="eventCount">-</span>
+    </div>
+
+    <div>
+        <span class="label">Event types:</span>
+        <span id="eventTypeCounts">-</span>
     </div>
 
     <div>
@@ -499,6 +503,10 @@ function clearMidiDisplay() {
     ).textContent = "-";
 
     document.getElementById(
+        "eventTypeCounts"
+    ).textContent = "-";
+
+    document.getElementById(
         "channelCount"
     ).textContent = "-";
 
@@ -525,6 +533,86 @@ function clearMidiDisplay() {
         "No MIDI loaded yet.";
 
     updateImportButton();
+}
+
+
+// =============================================================
+// EVENT TYPE COUNTS
+// =============================================================
+
+function makeEventTypeCounts(events) {
+
+    const counts =
+        new Map();
+
+
+    for (
+        const event
+        of events
+    ) {
+
+        counts.set(
+            event.type,
+            (
+                counts.get(
+                    event.type
+                ) || 0
+            ) + 1
+        );
+    }
+
+
+    const typeNames = {
+
+        0: "Note On",
+        1: "Note Off",
+        2: "Control Change",
+        3: "Program Change",
+        4: "Pitch Bend"
+    };
+
+
+    return Array.from(
+        counts.entries()
+    )
+    .sort(
+        function(a, b) {
+
+            return a[0] - b[0];
+        }
+    )
+    .map(
+        function(
+            entry
+        ) {
+
+            const type =
+                entry[0];
+
+            const count =
+                entry[1];
+
+
+            const name =
+                typeNames[type] ||
+                (
+                    "Type " +
+                    type
+                );
+
+
+            return (
+                name +
+                " (" +
+                type +
+                "): " +
+                count
+            );
+        }
+    )
+    .join(
+        "   |   "
+    );
 }
 
 
@@ -774,13 +862,6 @@ function convertMidi(midi) {
                     totalNotes++;
 
 
-                    /*
-                        ToneJS note-on velocity is normalized
-                        to 0.0 - 1.0.
-
-                        Convert back to MIDI 0 - 127.
-                    */
-
                     const velocity =
                         Math.max(
                             0,
@@ -831,10 +912,6 @@ function convertMidi(midi) {
                     //
                     // Data 1 = MIDI note number
                     // Data 2 = release velocity
-                    //
-                    // ToneJS does not expose release velocity
-                    // through its high-level Note representation,
-                    // so Data 2 remains 0 for now.
                     // =================================================
 
                     events.push({
@@ -888,14 +965,10 @@ function convertMidi(midi) {
 
 
             /*
-                NOTE OFF before NOTE ON when two events
-                have exactly the same timestamp.
+                Type 1 = Note Off
+                Type 0 = Note On
 
-                Type 1 = NOTE OFF
-                Type 0 = NOTE ON
-
-                Therefore descending type order places
-                type 1 before type 0.
+                Put Note Off first at identical timestamps.
             */
 
             if (
@@ -938,10 +1011,6 @@ function convertMidi(midi) {
         }
     );
 
-
-    /*
-        Assign final MIDI Flash array indices.
-    */
 
     events.forEach(
         function(
@@ -1374,6 +1443,14 @@ async function loadMidiFile() {
             "eventCount"
         ).textContent =
             parsedEvents.length;
+
+
+        document.getElementById(
+            "eventTypeCounts"
+        ).textContent =
+            makeEventTypeCounts(
+                parsedEvents
+            );
 
 
         document.getElementById(
@@ -1816,10 +1893,6 @@ PatchWorld.onWifiJolt =
     ) {
 
 
-        // ---------------------------------------------------------
-        // MIDI FLASH COMMUNICATION CHANNEL
-        // ---------------------------------------------------------
-
         if (
             channel ===
             CHANNELS.comChannel
@@ -1874,10 +1947,6 @@ PatchWorld.onWifiJolt =
         }
 
 
-        // ---------------------------------------------------------
-        // ABORT IMPORT FROM PATCHWORLD
-        // ---------------------------------------------------------
-
         if (
             channel ===
             CHANNELS.abortImport
@@ -1893,10 +1962,6 @@ PatchWorld.onWifiJolt =
             return;
         }
 
-
-        // ---------------------------------------------------------
-        // EVENT COUNT REQUEST FROM PATCHWORLD
-        // ---------------------------------------------------------
 
         if (
             channel ===
@@ -1963,10 +2028,6 @@ PatchWorld.onWifiJolt =
         }
 
 
-        // ---------------------------------------------------------
-        // ACK
-        // ---------------------------------------------------------
-
         if (
             channel ===
             CHANNELS.ack
@@ -2006,10 +2067,6 @@ PatchWorld.onWifiJolt =
             return;
         }
 
-
-        // ---------------------------------------------------------
-        // NAK
-        // ---------------------------------------------------------
 
         if (
             channel ===
@@ -2054,11 +2111,6 @@ async function advanceToNextWrite() {
 
     currentFieldIndex++;
 
-
-    /*
-        A complete MIDI Flash event has been stored
-        after all five field writes have ACKed.
-    */
 
     if (
         currentFieldIndex >=
