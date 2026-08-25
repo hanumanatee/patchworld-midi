@@ -57,6 +57,12 @@
             font-weight: bold;
         }
 
+        #comChannel {
+            font-family: monospace;
+            font-size: 22px;
+            font-weight: bold;
+        }
+
         pre {
             background: #111111;
             padding: 12px;
@@ -87,7 +93,7 @@
 
 <body>
 
-<div id="revision">MIDI2 REV 6</div>
+<div id="revision">MIDI2 REV 7</div>
 
 <h1>Patchworld Direct MIDI Importer</h1>
 
@@ -104,6 +110,11 @@
     <div>
         <span class="label">Wireless:</span>
         <span id="wirelessStatus">Not subscribed</span>
+    </div>
+
+    <div>
+        <span class="label">MIDI Flash channel:</span>
+        <span id="comChannel">0</span>
     </div>
 
 </div>
@@ -342,7 +353,10 @@ const CHANNELS = {
         "midi_abort_import",
 
     importProgress:
-        "midi_import_progress"
+        "midi_import_progress",
+
+    comChannel:
+        "midi_com_channel"
 };
 
 
@@ -387,6 +401,15 @@ let responseTimer = null;
 let importEventLimit = 0;
 
 let pendingEventRequest = null;
+
+
+/*
+    MIDI Flash communication Channel ID.
+
+    0 is Patchworld's default/omni-style channel.
+*/
+
+let midiComChannel = 0;
 
 
 // =============================================================
@@ -771,6 +794,8 @@ function convertMidi(midi) {
                         );
 
 
+                    // NOTE ON
+
                     events.push({
 
                         time:
@@ -795,6 +820,8 @@ function convertMidi(midi) {
                             "note_on"
                     });
 
+
+                    // NOTE OFF
 
                     events.push({
 
@@ -828,6 +855,10 @@ function convertMidi(midi) {
     );
 
 
+    /*
+        Merge all tracks chronologically.
+    */
+
     events.sort(
         function(a, b) {
 
@@ -841,6 +872,11 @@ function convertMidi(midi) {
                 );
             }
 
+
+            /*
+                NOTE OFF before NOTE ON
+                at identical timestamps.
+            */
 
             if (
                 a.type !== b.type
@@ -882,6 +918,10 @@ function convertMidi(midi) {
         }
     );
 
+
+    /*
+        Assign final PW array indices.
+    */
 
     events.forEach(
         function(
@@ -1467,6 +1507,11 @@ async function subscribeToResponses() {
         );
 
 
+        await PatchWorld.subscribeWifi(
+            CHANNELS.comChannel
+        );
+
+
         wirelessReady =
             true;
 
@@ -1474,7 +1519,7 @@ async function subscribeToResponses() {
         document.getElementById(
             "wirelessStatus"
         ).textContent =
-            "ACK/NAK/request/abort subscribed";
+            "ACK/NAK/request/abort/channel subscribed";
 
 
         updateImportButton();
@@ -1641,7 +1686,13 @@ async function sendCurrentWrite() {
         info.index +
         "] = " +
 
-        info.value;
+        info.value +
+
+        "  [Flash " +
+
+        midiComChannel +
+
+        "]";
 
 
     waitingForResponse =
@@ -1683,15 +1734,24 @@ async function sendCurrentWrite() {
 
     try {
 
+        /*
+            Third parameter = Patchworld wireless Channel ID.
+
+            Both the index and value go only to the selected
+            MIDI Flash communication channel.
+        */
+
         await PatchWorld.sendWirelessJolt(
             info.channels.index,
-            info.index
+            info.index,
+            midiComChannel
         );
 
 
         await PatchWorld.sendWirelessJolt(
             info.channels.value,
-            info.value
+            info.value,
+            midiComChannel
         );
 
     }
@@ -1716,7 +1776,7 @@ async function sendCurrentWrite() {
 
 
 // =============================================================
-// RECEIVE ACK / NAK / REQUEST / ABORT
+// RECEIVE ACK / NAK / REQUEST / ABORT / COMMUNICATION CHANNEL
 // =============================================================
 
 PatchWorld.onWifiJolt =
@@ -1725,6 +1785,73 @@ PatchWorld.onWifiJolt =
         value
     ) {
 
+
+        // ---------------------------------------------------------
+        // MIDI FLASH COMMUNICATION CHANNEL
+        // ---------------------------------------------------------
+
+        if (
+            channel ===
+            CHANNELS.comChannel
+        ) {
+
+            /*
+                Never allow the target MIDI Flash to change
+                in the middle of an import.
+            */
+
+            if (importing) {
+
+                console.warn(
+                    "Ignoring MIDI Flash channel change during import."
+                );
+
+                return;
+            }
+
+
+            const requestedChannel =
+                Math.floor(
+                    Number(
+                        value
+                    )
+                );
+
+
+            if (
+                !Number.isFinite(
+                    requestedChannel
+                ) ||
+                requestedChannel < 0
+            ) {
+
+                return;
+            }
+
+
+            midiComChannel =
+                requestedChannel;
+
+
+            document.getElementById(
+                "comChannel"
+            ).textContent =
+                midiComChannel;
+
+
+            setStatus(
+                "MIDI Flash communication channel set to " +
+                midiComChannel
+            );
+
+
+            return;
+        }
+
+
+        // ---------------------------------------------------------
+        // ABORT IMPORT FROM PATCHWORLD
+        // ---------------------------------------------------------
 
         if (
             channel ===
@@ -1741,6 +1868,10 @@ PatchWorld.onWifiJolt =
             return;
         }
 
+
+        // ---------------------------------------------------------
+        // EVENT COUNT REQUEST FROM PATCHWORLD
+        // ---------------------------------------------------------
 
         if (
             channel ===
@@ -1807,6 +1938,10 @@ PatchWorld.onWifiJolt =
         }
 
 
+        // ---------------------------------------------------------
+        // ACK
+        // ---------------------------------------------------------
+
         if (
             channel ===
             CHANNELS.ack
@@ -1846,6 +1981,10 @@ PatchWorld.onWifiJolt =
             return;
         }
 
+
+        // ---------------------------------------------------------
+        // NAK
+        // ---------------------------------------------------------
 
         if (
             channel ===
@@ -1891,6 +2030,11 @@ async function advanceToNextWrite() {
     currentFieldIndex++;
 
 
+    /*
+        A complete event has been stored after all
+        five field writes have ACKed.
+    */
+
     if (
         currentFieldIndex >=
         FIELD_ORDER.length
@@ -1906,6 +2050,12 @@ async function advanceToNextWrite() {
             currentEventIndex /
             importEventLimit;
 
+
+        /*
+            Import progress belongs to the importer/control
+            interface, so it is deliberately NOT channelized
+            to the MIDI Flash communication Channel ID.
+        */
 
         try {
 
@@ -2096,9 +2246,16 @@ function startImport() {
 
 
     setStatus(
-        "Import started..."
+        "Import started to MIDI Flash channel " +
+        midiComChannel +
+        "..."
     );
 
+
+    /*
+        Import progress is intentionally not sent
+        on the MIDI Flash Channel ID.
+    */
 
     PatchWorld.sendWirelessJolt(
         CHANNELS.importProgress,
@@ -2138,9 +2295,15 @@ async function completeImport() {
 
     try {
 
+        /*
+            Event count belongs to the MIDI Flash dataset,
+            so send it specifically to the selected Flash.
+        */
+
         await PatchWorld.sendWirelessJolt(
             CHANNELS.eventCount,
-            importEventLimit
+            importEventLimit,
+            midiComChannel
         );
 
     }
@@ -2175,7 +2338,11 @@ async function completeImport() {
 
         "Event count sent: " +
 
-        importEventLimit
+        importEventLimit +
+
+        " to MIDI Flash channel " +
+
+        midiComChannel
     );
 
 
@@ -2232,6 +2399,12 @@ function stopImport(reason) {
 
     waitingForResponse =
         false;
+
+
+    /*
+        Deliberately leave already-written MIDI Flash
+        data and the last progress value intact.
+    */
 
 
     setStatus(
