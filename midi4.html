@@ -58,7 +58,8 @@
             font-weight: bold;
         }
 
-        #eventTypeCounts {
+        #eventTypeCounts,
+        #requestedEventTypeCounts {
             font-family: monospace;
         }
 
@@ -92,7 +93,7 @@
 
 <body>
 
-<div id="revision">MIDI4 REV 2</div>
+<div id="revision">MIDI4 REV 3</div>
 
 <h1>Patchworld Direct MIDI Importer</h1>
 
@@ -183,8 +184,13 @@
     </div>
 
     <div>
-        <span class="label">Event types:</span>
+        <span class="label">Event types in full file:</span>
         <span id="eventTypeCounts">-</span>
+    </div>
+
+    <div>
+        <span class="label">Event types in requested range:</span>
+        <span id="requestedEventTypeCounts">-</span>
     </div>
 
     <div>
@@ -527,6 +533,10 @@ function clearMidiDisplay() {
     ).textContent = "-";
 
     document.getElementById(
+        "requestedEventTypeCounts"
+    ).textContent = "-";
+
+    document.getElementById(
         "channelCount"
     ).textContent = "-";
 
@@ -621,6 +631,40 @@ function makeEventTypeCounts(events) {
     .join(
         "   |   "
     );
+}
+
+
+function updateRequestedEventTypeCounts() {
+
+    const output =
+        document.getElementById(
+            "requestedEventTypeCounts"
+        );
+
+
+    if (
+        parsedEvents.length === 0 ||
+        importEventLimit <= 0
+    ) {
+
+        output.textContent =
+            "-";
+
+        return;
+    }
+
+
+    const requestedEvents =
+        parsedEvents.slice(
+            0,
+            importEventLimit
+        );
+
+
+    output.textContent =
+        makeEventTypeCounts(
+            requestedEvents
+        );
 }
 
 
@@ -873,10 +917,6 @@ function convertMidi(midi) {
                 track.channel;
 
 
-            // =====================================================
-            // NOTES
-            // =====================================================
-
             if (
                 track.notes.length > 0
             ) {
@@ -886,6 +926,10 @@ function convertMidi(midi) {
                 );
             }
 
+
+            // =====================================================
+            // NOTES
+            // =====================================================
 
             track.notes.forEach(
                 function(note) {
@@ -898,13 +942,6 @@ function convertMidi(midi) {
                             note.velocity
                         );
 
-
-                    // -------------------------------------------------
-                    // TYPE 0 = NOTE ON
-                    //
-                    // Data1 = note
-                    // Data2 = attack velocity
-                    // -------------------------------------------------
 
                     events.push({
 
@@ -933,13 +970,6 @@ function convertMidi(midi) {
                             "note_on"
                     });
 
-
-                    // -------------------------------------------------
-                    // TYPE 1 = NOTE OFF
-                    //
-                    // Data1 = note
-                    // Data2 = release velocity
-                    // -------------------------------------------------
 
                     events.push({
 
@@ -985,9 +1015,9 @@ function convertMidi(midi) {
             // =====================================================
             // CONTROL CHANGE
             //
-            // TYPE 2
-            // Data1 = controller number
-            // Data2 = controller value 0-127
+            // type 2
+            // data1 = controller number
+            // data2 = controller value
             // =====================================================
 
             for (
@@ -1062,22 +1092,16 @@ function convertMidi(midi) {
             // =====================================================
             // PROGRAM CHANGE
             //
-            // TYPE 3 RESERVED.
-            //
-            // No timestamped type-3 events are currently generated
-            // from the ToneJS high-level Track representation.
+            // type 3 reserved
             // =====================================================
 
 
             // =====================================================
             // PITCH BEND
             //
-            // TYPE 4
-            //
-            // Data1 = ToneJS pitch bend value
-            // Data2 = 0
-            //
-            // Keep the parsed bend value unscaled for now.
+            // type 4
+            // data1 = parsed ToneJS bend value
+            // data2 = 0
             // =====================================================
 
             if (
@@ -1128,7 +1152,7 @@ function convertMidi(midi) {
 
 
     // =============================================================
-    // MERGE ALL EVENT TYPES CHRONOLOGICALLY
+    // SORT ALL EVENTS CHRONOLOGICALLY
     // =============================================================
 
     events.sort(
@@ -1163,20 +1187,13 @@ function convertMidi(midi) {
             }
 
 
-            /*
-                Deterministic ordering for events sharing
-                an identical timestamp/tick.
-
-                Note Off is kept ahead of Note On.
-            */
-
             const priority = {
 
-                1: 0,   // Note Off
-                2: 1,   // Control Change
-                3: 2,   // Program Change
-                4: 3,   // Pitch Bend
-                0: 4    // Note On
+                1: 0,
+                2: 1,
+                3: 2,
+                4: 3,
+                0: 4
             };
 
 
@@ -1232,10 +1249,6 @@ function convertMidi(midi) {
         }
     );
 
-
-    // =============================================================
-    // ASSIGN MIDI FLASH INDICES
-    // =============================================================
 
     events.forEach(
         function(
@@ -1537,6 +1550,8 @@ function setEventLimit(
 
 
     updateWriteCount();
+
+    updateRequestedEventTypeCounts();
 }
 
 
@@ -1765,6 +1780,11 @@ async function loadMidiFile() {
                 importEventLimit;
 
 
+            updateWriteCount();
+
+            updateRequestedEventTypeCounts();
+
+
             if (
                 pendingEventRequest !==
                 null
@@ -1790,10 +1810,9 @@ async function loadMidiFile() {
                 "eventLimit"
             ).textContent =
                 "-";
+
+            updateRequestedEventTypeCounts();
         }
-
-
-        updateWriteCount();
 
 
         setStatus(
@@ -2055,9 +2074,15 @@ async function sendCurrentWrite() {
         currentEventIndex +
 
         " / " +
-        EVENT_TYPE_NAMES[
-            info.event.type
-        ] +
+        (
+            EVENT_TYPE_NAMES[
+                info.event.type
+            ] ||
+            (
+                "Type " +
+                info.event.type
+            )
+        ) +
 
         " / " +
         info.fieldName +
@@ -2377,19 +2402,6 @@ async function advanceToNextWrite() {
 
     currentFieldIndex++;
 
-
-    /*
-        All event types use the same five MIDI Flash fields:
-
-        Time
-        Event Type
-        Data1
-        Data2
-        Channel
-
-        Therefore types 0, 1, 2 and 4 all pass through
-        exactly the same verified write sequence.
-    */
 
     if (
         currentFieldIndex >=
