@@ -59,8 +59,32 @@
         }
 
         #eventTypeCounts,
-        #requestedEventTypeCounts {
+        #filteredEventTypeCounts,
+        #requestedEventTypeCounts,
+        #expectedSounds {
             font-family: monospace;
+        }
+
+        .event-filter-list {
+            margin-top: 10px;
+        }
+
+        .event-filter-row {
+            display: block;
+            margin: 7px 0;
+            font-size: 17px;
+        }
+
+        .event-filter-row input {
+            transform: scale(1.25);
+            margin-right: 9px;
+        }
+
+        .master-filter-row {
+            margin-top: 14px;
+            padding-top: 10px;
+            border-top: 1px solid #444444;
+            font-weight: bold;
         }
 
         pre {
@@ -93,7 +117,7 @@
 
 <body>
 
-<div id="revision">MIDI4 REV 3</div>
+<div id="revision">MIDI4 REV 4</div>
 
 <h1>Patchworld Direct MIDI Importer</h1>
 
@@ -149,6 +173,74 @@
 
 <div class="section">
 
+    <div class="label">
+        Event types to import:
+    </div>
+
+    <div class="event-filter-list">
+
+        <label class="event-filter-row">
+            <input
+                type="checkbox"
+                class="eventTypeCheckbox"
+                data-event-type="0"
+                checked
+            >
+            Note On (0)
+        </label>
+
+        <label class="event-filter-row">
+            <input
+                type="checkbox"
+                class="eventTypeCheckbox"
+                data-event-type="1"
+                checked
+            >
+            Note Off (1)
+        </label>
+
+        <label class="event-filter-row">
+            <input
+                type="checkbox"
+                class="eventTypeCheckbox"
+                data-event-type="2"
+            >
+            Control Change (2)
+        </label>
+
+        <label class="event-filter-row">
+            <input
+                type="checkbox"
+                class="eventTypeCheckbox"
+                data-event-type="3"
+            >
+            Program Change (3)
+        </label>
+
+        <label class="event-filter-row">
+            <input
+                type="checkbox"
+                class="eventTypeCheckbox"
+                data-event-type="4"
+            >
+            Pitch Bend (4)
+        </label>
+
+        <label class="event-filter-row master-filter-row">
+            <input
+                type="checkbox"
+                id="selectAllEventTypes"
+            >
+            Select all
+        </label>
+
+    </div>
+
+</div>
+
+
+<div class="section">
+
     <div id="status">
         Waiting.
     </div>
@@ -189,6 +281,21 @@
     </div>
 
     <div>
+        <span class="label">Events after type filtering:</span>
+        <span id="filteredEventCount">-</span>
+    </div>
+
+    <div>
+        <span class="label">Event types after filtering:</span>
+        <span id="filteredEventTypeCounts">-</span>
+    </div>
+
+    <div>
+        <span class="label">Events requested for import:</span>
+        <span id="eventLimit">-</span>
+    </div>
+
+    <div>
         <span class="label">Event types in requested range:</span>
         <span id="requestedEventTypeCounts">-</span>
     </div>
@@ -199,8 +306,8 @@
     </div>
 
     <div>
-        <span class="label">Events to import:</span>
-        <span id="eventLimit">-</span>
+        <span class="label">Expected sounds by channel:</span>
+        <span id="expectedSounds">-</span>
     </div>
 
     <div>
@@ -260,7 +367,7 @@
 <div class="section">
 
     <div class="label">
-        First 20 generated PW events:
+        First 20 parsed PW events:
     </div>
 
     <pre id="preview">No MIDI loaded yet.</pre>
@@ -410,6 +517,8 @@ const ACK_TIMEOUT_MS = 2000;
 
 let parsedEvents = [];
 
+let filteredEvents = [];
+
 let bridgeReady = false;
 let wirelessReady = false;
 
@@ -428,7 +537,25 @@ let retryForCurrentWrite = 0;
 let waitingForResponse = false;
 let responseTimer = null;
 
+
+/*
+    null means:
+    import all events surviving the type filter.
+
+    If PW sends midi_events_requested, this contains
+    that requested count.
+*/
+
+let requestedEventCount = null;
+
+
+/*
+    Actual number which will be imported after
+    filtering and requested-count clamping.
+*/
+
 let importEventLimit = 0;
+
 
 let pendingEventRequest = null;
 
@@ -494,7 +621,8 @@ function updateImportButton() {
         "importButton"
     ).disabled = !(
 
-        parsedEvents.length > 0 &&
+        filteredEvents.length > 0 &&
+        importEventLimit > 0 &&
         bridgeReady &&
         wirelessReady &&
         !importing
@@ -502,11 +630,44 @@ function updateImportButton() {
 }
 
 
+function setFilterControlsDisabled(
+    disabled
+) {
+
+    const boxes =
+        document.querySelectorAll(
+            ".eventTypeCheckbox"
+        );
+
+
+    boxes.forEach(
+        function(box) {
+
+            box.disabled =
+                disabled;
+        }
+    );
+
+
+    document.getElementById(
+        "selectAllEventTypes"
+    ).disabled =
+        disabled;
+}
+
+
 function clearMidiDisplay() {
 
     parsedEvents = [];
 
-    importEventLimit = 0;
+    filteredEvents = [];
+
+    requestedEventCount =
+        null;
+
+    importEventLimit =
+        0;
+
 
     document.getElementById(
         "midiName"
@@ -533,11 +694,23 @@ function clearMidiDisplay() {
     ).textContent = "-";
 
     document.getElementById(
+        "filteredEventCount"
+    ).textContent = "-";
+
+    document.getElementById(
+        "filteredEventTypeCounts"
+    ).textContent = "-";
+
+    document.getElementById(
         "requestedEventTypeCounts"
     ).textContent = "-";
 
     document.getElementById(
         "channelCount"
+    ).textContent = "-";
+
+    document.getElementById(
+        "expectedSounds"
     ).textContent = "-";
 
     document.getElementById(
@@ -571,6 +744,14 @@ function clearMidiDisplay() {
 // =============================================================
 
 function makeEventTypeCounts(events) {
+
+    if (
+        events.length === 0
+    ) {
+
+        return "None";
+    }
+
 
     const counts =
         new Map();
@@ -634,6 +815,206 @@ function makeEventTypeCounts(events) {
 }
 
 
+// =============================================================
+// EVENT FILTERING
+// =============================================================
+
+function getEnabledEventTypes() {
+
+    const enabled =
+        new Set();
+
+
+    const boxes =
+        document.querySelectorAll(
+            ".eventTypeCheckbox"
+        );
+
+
+    boxes.forEach(
+        function(box) {
+
+            if (
+                box.checked
+            ) {
+
+                enabled.add(
+                    Number(
+                        box.dataset.eventType
+                    )
+                );
+            }
+        }
+    );
+
+
+    return enabled;
+}
+
+
+function updateSelectAllState() {
+
+    const boxes =
+        Array.from(
+            document.querySelectorAll(
+                ".eventTypeCheckbox"
+            )
+        );
+
+
+    const selectAll =
+        document.getElementById(
+            "selectAllEventTypes"
+        );
+
+
+    const checkedCount =
+        boxes.filter(
+            box =>
+                box.checked
+        ).length;
+
+
+    selectAll.checked =
+        (
+            checkedCount ===
+            boxes.length
+        );
+
+
+    selectAll.indeterminate =
+        (
+            checkedCount > 0 &&
+            checkedCount <
+            boxes.length
+        );
+}
+
+
+function refreshFilteredEvents() {
+
+    if (
+        parsedEvents.length === 0
+    ) {
+
+        filteredEvents = [];
+
+        importEventLimit = 0;
+
+
+        document.getElementById(
+            "filteredEventCount"
+        ).textContent =
+            "-";
+
+
+        document.getElementById(
+            "filteredEventTypeCounts"
+        ).textContent =
+            "-";
+
+
+        document.getElementById(
+            "requestedEventTypeCounts"
+        ).textContent =
+            "-";
+
+
+        document.getElementById(
+            "eventLimit"
+        ).textContent =
+            "-";
+
+
+        updateWriteCount();
+
+        updateImportButton();
+
+        return;
+    }
+
+
+    const enabledTypes =
+        getEnabledEventTypes();
+
+
+    filteredEvents =
+        parsedEvents.filter(
+            function(event) {
+
+                return enabledTypes.has(
+                    event.type
+                );
+            }
+        );
+
+
+    /*
+        The filtered array is deliberately not given
+        permanent Flash indices here.
+
+        During writing, currentEventIndex is used as
+        the destination array index, guaranteeing
+        contiguous MIDI Flash indices even when
+        source events have been filtered out.
+    */
+
+
+    document.getElementById(
+        "filteredEventCount"
+    ).textContent =
+        filteredEvents.length;
+
+
+    document.getElementById(
+        "filteredEventTypeCounts"
+    ).textContent =
+        makeEventTypeCounts(
+            filteredEvents
+        );
+
+
+    if (
+        filteredEvents.length === 0
+    ) {
+
+        importEventLimit =
+            0;
+
+    } else if (
+        requestedEventCount === null
+    ) {
+
+        importEventLimit =
+            filteredEvents.length;
+
+    } else {
+
+        importEventLimit =
+            Math.max(
+                1,
+                Math.min(
+                    requestedEventCount,
+                    filteredEvents.length
+                )
+            );
+    }
+
+
+    document.getElementById(
+        "eventLimit"
+    ).textContent =
+        importEventLimit;
+
+
+    updateRequestedEventTypeCounts();
+
+    updateWriteCount();
+
+    updateImportButton();
+}
+
+
 function updateRequestedEventTypeCounts() {
 
     const output =
@@ -643,19 +1024,19 @@ function updateRequestedEventTypeCounts() {
 
 
     if (
-        parsedEvents.length === 0 ||
+        filteredEvents.length === 0 ||
         importEventLimit <= 0
     ) {
 
         output.textContent =
-            "-";
+            "None";
 
         return;
     }
 
 
     const requestedEvents =
-        parsedEvents.slice(
+        filteredEvents.slice(
             0,
             importEventLimit
         );
@@ -665,6 +1046,82 @@ function updateRequestedEventTypeCounts() {
         makeEventTypeCounts(
             requestedEvents
         );
+}
+
+
+// =============================================================
+// EVENT REQUEST LIMIT
+// =============================================================
+
+function setEventLimit(
+    requestedValue
+) {
+
+    let value =
+        Math.floor(
+            Number(
+                requestedValue
+            )
+        );
+
+
+    if (
+        !Number.isFinite(
+            value
+        )
+    ) {
+
+        return;
+    }
+
+
+    value =
+        Math.max(
+            1,
+            value
+        );
+
+
+    if (
+        parsedEvents.length === 0
+    ) {
+
+        pendingEventRequest =
+            value;
+
+        return;
+    }
+
+
+    requestedEventCount =
+        value;
+
+
+    refreshFilteredEvents();
+}
+
+
+function updateWriteCount() {
+
+    if (
+        importEventLimit <= 0
+    ) {
+
+        document.getElementById(
+            "writesRequired"
+        ).textContent =
+            "-";
+
+        return;
+    }
+
+
+    document.getElementById(
+        "writesRequired"
+    ).textContent =
+
+        importEventLimit *
+        FIELD_ORDER.length;
 }
 
 
@@ -943,6 +1400,10 @@ function convertMidi(midi) {
                         );
 
 
+                    // TYPE 0 = NOTE ON
+                    // Data1 = note
+                    // Data2 = attack velocity
+
                     events.push({
 
                         time:
@@ -970,6 +1431,10 @@ function convertMidi(midi) {
                             "note_on"
                     });
 
+
+                    // TYPE 1 = NOTE OFF
+                    // Data1 = note
+                    // Data2 = release velocity
 
                     events.push({
 
@@ -1015,9 +1480,9 @@ function convertMidi(midi) {
             // =====================================================
             // CONTROL CHANGE
             //
-            // type 2
-            // data1 = controller number
-            // data2 = controller value
+            // TYPE 2
+            // Data1 = controller number
+            // Data2 = controller value
             // =====================================================
 
             for (
@@ -1092,16 +1557,17 @@ function convertMidi(midi) {
             // =====================================================
             // PROGRAM CHANGE
             //
-            // type 3 reserved
+            // TYPE 3 RESERVED.
+            // No timestamped events currently generated here.
             // =====================================================
 
 
             // =====================================================
             // PITCH BEND
             //
-            // type 4
-            // data1 = parsed ToneJS bend value
-            // data2 = 0
+            // TYPE 4
+            // Data1 = ToneJS bend value
+            // Data2 = 0
             // =====================================================
 
             if (
@@ -1189,11 +1655,11 @@ function convertMidi(midi) {
 
             const priority = {
 
-                1: 0,
-                2: 1,
-                3: 2,
-                4: 3,
-                0: 4
+                1: 0,   // Note Off
+                2: 1,   // CC
+                3: 2,   // Program Change
+                4: 3,   // Pitch Bend
+                0: 4    // Note On
             };
 
 
@@ -1250,6 +1716,14 @@ function convertMidi(midi) {
     );
 
 
+    /*
+        This index represents position in the fully
+        parsed source stream only.
+
+        MIDI Flash destination indices are reassigned
+        dynamically after filtering.
+    */
+
     events.forEach(
         function(
             event,
@@ -1285,6 +1759,169 @@ function convertMidi(midi) {
         channels:
             channelList
     };
+}
+
+
+// =============================================================
+// EXPECTED SOUNDS BY CHANNEL
+// =============================================================
+
+function makeExpectedSoundsByChannel(
+    midi
+) {
+
+    const channels =
+        new Map();
+
+
+    midi.tracks.forEach(
+        function(track) {
+
+            /*
+                Ignore completely empty tracks for this display.
+            */
+
+            if (
+                track.notes.length === 0
+            ) {
+
+                return;
+            }
+
+
+            const channel =
+                track.channel;
+
+
+            if (
+                !channels.has(
+                    channel
+                )
+            ) {
+
+                channels.set(
+                    channel,
+                    new Map()
+                );
+            }
+
+
+            const sounds =
+                channels.get(
+                    channel
+                );
+
+
+            if (
+                track.instrument
+            ) {
+
+                const number =
+                    track.instrument.number;
+
+
+                const name =
+                    track.instrument.name ||
+                    "Unknown";
+
+
+                const key =
+                    String(
+                        number
+                    ) +
+                    "|" +
+                    name;
+
+
+                sounds.set(
+                    key,
+                    {
+                        number:
+                            number,
+
+                        name:
+                            name
+                    }
+                );
+            }
+        }
+    );
+
+
+    if (
+        channels.size === 0
+    ) {
+
+        return "-";
+    }
+
+
+    const lines = [];
+
+
+    Array.from(
+        channels.keys()
+    )
+    .sort(
+        function(a, b) {
+
+            return a - b;
+        }
+    )
+    .forEach(
+        function(channel) {
+
+            const sounds =
+                Array.from(
+                    channels
+                        .get(channel)
+                        .values()
+                );
+
+
+            if (
+                sounds.length === 0
+            ) {
+
+                lines.push(
+                    "Channel " +
+                    channel +
+                    " — unknown"
+                );
+
+                return;
+            }
+
+
+            const descriptions =
+                sounds.map(
+                    function(sound) {
+
+                        return (
+                            sound.name +
+                            " [" +
+                            sound.number +
+                            "]"
+                        );
+                    }
+                );
+
+
+            lines.push(
+                "Channel " +
+                channel +
+                " — " +
+                descriptions.join(
+                    " / "
+                )
+            );
+        }
+    );
+
+
+    return lines.join(
+        "   |   "
+    );
 }
 
 
@@ -1493,94 +2130,6 @@ function makePreview(events) {
 
 
 // =============================================================
-// EVENT LIMIT
-// =============================================================
-
-function setEventLimit(
-    requestedValue
-) {
-
-    if (
-        parsedEvents.length === 0
-    ) {
-
-        pendingEventRequest =
-            requestedValue;
-
-        return;
-    }
-
-
-    let value =
-        Math.floor(
-            Number(
-                requestedValue
-            )
-        );
-
-
-    if (
-        !Number.isFinite(
-            value
-        )
-    ) {
-
-        return;
-    }
-
-
-    value =
-        Math.max(
-            1,
-            Math.min(
-                value,
-                parsedEvents.length
-            )
-        );
-
-
-    importEventLimit =
-        value;
-
-
-    document.getElementById(
-        "eventLimit"
-    ).textContent =
-        value;
-
-
-    updateWriteCount();
-
-    updateRequestedEventTypeCounts();
-}
-
-
-function updateWriteCount() {
-
-    if (
-        parsedEvents.length === 0 ||
-        importEventLimit === 0
-    ) {
-
-        document.getElementById(
-            "writesRequired"
-        ).textContent =
-            "-";
-
-        return;
-    }
-
-
-    document.getElementById(
-        "writesRequired"
-    ).textContent =
-
-        importEventLimit *
-        FIELD_ORDER.length;
-}
-
-
-// =============================================================
 // LOAD BINARY MIDI
 // =============================================================
 
@@ -1741,6 +2290,14 @@ async function loadMidiFile() {
 
 
         document.getElementById(
+            "expectedSounds"
+        ).textContent =
+            makeExpectedSoundsByChannel(
+                midi
+            );
+
+
+        document.getElementById(
             "duration"
         ).textContent =
 
@@ -1766,52 +2323,40 @@ async function loadMidiFile() {
             );
 
 
+        /*
+            If no PW request has been received,
+            default to all events which survive
+            the current type filter.
+        */
+
+        requestedEventCount =
+            null;
+
+
+        refreshFilteredEvents();
+
+
+        /*
+            If PW sent its request before this MIDI
+            file was parsed, apply it now.
+        */
+
         if (
-            parsedEvents.length > 0
+            pendingEventRequest !==
+            null
         ) {
 
-            importEventLimit =
-                parsedEvents.length;
+            const request =
+                pendingEventRequest;
 
 
-            document.getElementById(
-                "eventLimit"
-            ).textContent =
-                importEventLimit;
+            pendingEventRequest =
+                null;
 
 
-            updateWriteCount();
-
-            updateRequestedEventTypeCounts();
-
-
-            if (
-                pendingEventRequest !==
-                null
-            ) {
-
-                const request =
-                    pendingEventRequest;
-
-                pendingEventRequest =
-                    null;
-
-                setEventLimit(
-                    request
-                );
-            }
-
-        } else {
-
-            importEventLimit =
-                0;
-
-            document.getElementById(
-                "eventLimit"
-            ).textContent =
-                "-";
-
-            updateRequestedEventTypeCounts();
+            setEventLimit(
+                request
+            );
         }
 
 
@@ -2001,7 +2546,7 @@ PatchWorld.onDisconnected =
 function getCurrentFieldInfo() {
 
     const event =
-        parsedEvents[
+        filteredEvents[
             currentEventIndex
         ];
 
@@ -2020,8 +2565,19 @@ function getCurrentFieldInfo() {
         fieldName:
             fieldName,
 
+        /*
+            IMPORTANT:
+
+            Use currentEventIndex, NOT event.index.
+
+            event.index refers to the original full parsed
+            stream and can contain gaps after filtering.
+
+            MIDI Flash always receives contiguous indices.
+        */
+
         index:
-            event.index,
+            currentEventIndex,
 
         value:
             event[
@@ -2184,6 +2740,10 @@ PatchWorld.onWifiJolt =
     ) {
 
 
+        // ---------------------------------------------------------
+        // MIDI FLASH COMMUNICATION CHANNEL
+        // ---------------------------------------------------------
+
         if (
             channel ===
             CHANNELS.comChannel
@@ -2238,6 +2798,10 @@ PatchWorld.onWifiJolt =
         }
 
 
+        // ---------------------------------------------------------
+        // ABORT
+        // ---------------------------------------------------------
+
         if (
             channel ===
             CHANNELS.abortImport
@@ -2253,6 +2817,10 @@ PatchWorld.onWifiJolt =
             return;
         }
 
+
+        // ---------------------------------------------------------
+        // REQUESTED EVENT COUNT
+        // ---------------------------------------------------------
 
         if (
             channel ===
@@ -2319,6 +2887,10 @@ PatchWorld.onWifiJolt =
         }
 
 
+        // ---------------------------------------------------------
+        // ACK
+        // ---------------------------------------------------------
+
         if (
             channel ===
             CHANNELS.ack
@@ -2358,6 +2930,10 @@ PatchWorld.onWifiJolt =
             return;
         }
 
+
+        // ---------------------------------------------------------
+        // NAK
+        // ---------------------------------------------------------
 
         if (
             channel ===
@@ -2530,7 +3106,7 @@ function retryCurrentWrite(
 function startImport() {
 
     if (
-        parsedEvents.length === 0 ||
+        filteredEvents.length === 0 ||
         !bridgeReady ||
         !wirelessReady ||
         importEventLimit === 0
@@ -2607,6 +3183,11 @@ function startImport() {
         false;
 
 
+    setFilterControlsDisabled(
+        true
+    );
+
+
     setStatus(
         "Import started to MIDI Flash channel " +
         midiComChannel +
@@ -2652,6 +3233,11 @@ async function completeImport() {
 
     try {
 
+        /*
+            Store exactly the number of events actually
+            written after filtering and range limiting.
+        */
+
         await PatchWorld.sendWirelessJolt(
             CHANNELS.eventCount,
             importEventLimit,
@@ -2690,7 +3276,7 @@ async function completeImport() {
 
         importEventLimit +
 
-        " events stored on MIDI Flash channel " +
+        " filtered events stored on MIDI Flash channel " +
 
         midiComChannel
     );
@@ -2722,6 +3308,11 @@ function restoreControls() {
         "fileSelect"
     ).disabled =
         false;
+
+
+    setFilterControlsDisabled(
+        false
+    );
 
 
     updateImportButton();
@@ -2822,8 +3413,68 @@ document.getElementById(
 
 
 // =============================================================
+// EVENT TYPE CHECKBOX EVENTS
+// =============================================================
+
+document
+    .querySelectorAll(
+        ".eventTypeCheckbox"
+    )
+    .forEach(
+        function(box) {
+
+            box.addEventListener(
+                "change",
+                function() {
+
+                    updateSelectAllState();
+
+                    refreshFilteredEvents();
+                }
+            );
+        }
+    );
+
+
+document.getElementById(
+    "selectAllEventTypes"
+).addEventListener(
+
+    "change",
+
+    function() {
+
+        const checked =
+            this.checked;
+
+
+        document
+            .querySelectorAll(
+                ".eventTypeCheckbox"
+            )
+            .forEach(
+                function(box) {
+
+                    box.checked =
+                        checked;
+                }
+            );
+
+
+        this.indeterminate =
+            false;
+
+
+        refreshFilteredEvents();
+    }
+);
+
+
+// =============================================================
 // INITIALIZE
 // =============================================================
+
+updateSelectAllState();
 
 loadMidiDirectory();
 
