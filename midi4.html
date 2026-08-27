@@ -1,0 +1,2815 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Patchworld Direct MIDI Importer</title>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #181818;
+            color: #eeeeee;
+            margin: 30px;
+        }
+
+        h1 {
+            margin-bottom: 5px;
+        }
+
+        #revision {
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        #author {
+            font-size: 14px;
+            color: #aaaaaa;
+            margin-top: -2px;
+            margin-bottom: 14px;
+        }
+
+        .section {
+            margin-top: 18px;
+            padding: 14px;
+            background: #282828;
+            border-radius: 8px;
+        }
+
+        .label {
+            color: #aaaaaa;
+        }
+
+        button,
+        select {
+            font-size: 18px;
+            padding: 10px 18px;
+            margin-top: 10px;
+            margin-right: 8px;
+        }
+
+        select {
+            min-width: 320px;
+        }
+
+        #eventLimit,
+        #comChannel {
+            font-family: monospace;
+            font-size: 22px;
+            font-weight: bold;
+        }
+
+        #eventTypeCounts {
+            font-family: monospace;
+        }
+
+        pre {
+            background: #111111;
+            padding: 12px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        #status {
+            font-size: 18px;
+            margin-bottom: 8px;
+        }
+
+        .good {
+            color: #69d36f;
+        }
+
+        .bad {
+            color: #ff6b6b;
+        }
+
+        .value {
+            font-family: monospace;
+        }
+    </style>
+</head>
+
+<body>
+
+<div id="revision">MIDI4 REV 1</div>
+
+<h1>Patchworld Direct MIDI Importer</h1>
+
+<div id="author">Hanumanatee</div>
+
+
+<div class="section">
+
+    <div>
+        <span class="label">Bridge:</span>
+        <span id="bridgeStatus">Waiting...</span>
+    </div>
+
+    <div>
+        <span class="label">Wireless:</span>
+        <span id="wirelessStatus">Not subscribed</span>
+    </div>
+
+    <div>
+        <span class="label">MIDI Flash channel:</span>
+        <span id="comChannel">0</span>
+    </div>
+
+</div>
+
+
+<div class="section">
+
+    <div>
+        <span class="label">MIDI file:</span>
+    </div>
+
+    <select id="fileSelect" disabled>
+        <option>Loading MIDI directory...</option>
+    </select>
+
+    <br>
+
+    <button id="loadButton" disabled>
+        Load and Parse MIDI
+    </button>
+
+    <button id="importButton" disabled>
+        Start Import
+    </button>
+
+    <button id="abortButton" disabled>
+        Abort
+    </button>
+
+</div>
+
+
+<div class="section">
+
+    <div id="status">
+        Waiting.
+    </div>
+
+    <div>
+        <span class="label">Selected file:</span>
+        <span id="selectedFile">-</span>
+    </div>
+
+    <div>
+        <span class="label">MIDI name:</span>
+        <span id="midiName">-</span>
+    </div>
+
+    <div>
+        <span class="label">PPQ:</span>
+        <span id="ppq">-</span>
+    </div>
+
+    <div>
+        <span class="label">Parsed tracks:</span>
+        <span id="trackCount">-</span>
+    </div>
+
+    <div>
+        <span class="label">Notes:</span>
+        <span id="noteCount">-</span>
+    </div>
+
+    <div>
+        <span class="label">Parsed events:</span>
+        <span id="eventCount">-</span>
+    </div>
+
+    <div>
+        <span class="label">Event types:</span>
+        <span id="eventTypeCounts">-</span>
+    </div>
+
+    <div>
+        <span class="label">Detected channels:</span>
+        <span id="channelCount">-</span>
+    </div>
+
+    <div>
+        <span class="label">Events to import:</span>
+        <span id="eventLimit">-</span>
+    </div>
+
+    <div>
+        <span class="label">Duration:</span>
+        <span id="duration">-</span>
+    </div>
+
+    <div>
+        <span class="label">Writes required:</span>
+        <span id="writesRequired">-</span>
+    </div>
+
+</div>
+
+
+<div class="section">
+
+    <div>
+        <span class="label">Current write:</span>
+        <span id="currentWrite" class="value">-</span>
+    </div>
+
+    <div>
+        <span class="label">Completed writes:</span>
+        <span id="completedWrites">0</span>
+    </div>
+
+    <div>
+        <span class="label">ACKs:</span>
+        <span id="ackCount" class="good">0</span>
+    </div>
+
+    <div>
+        <span class="label">NAKs:</span>
+        <span id="nakCount" class="bad">0</span>
+    </div>
+
+    <div>
+        <span class="label">Retries:</span>
+        <span id="retryCount">0</span>
+    </div>
+
+</div>
+
+
+<div class="section">
+
+    <div class="label">
+        Track information:
+    </div>
+
+    <pre id="trackInfo">No MIDI loaded yet.</pre>
+
+</div>
+
+
+<div class="section">
+
+    <div class="label">
+        First 20 generated PW events:
+    </div>
+
+    <pre id="preview">No MIDI loaded yet.</pre>
+
+</div>
+
+
+<script src="https://unpkg.com/@tonejs/midi@2.0.28/build/Midi.js"></script>
+
+
+<script>
+    document.write(
+        '<script src="patchworld-bridge.js?t=' +
+        Date.now() +
+        '"><\/script>'
+    );
+</script>
+
+
+<script>
+
+// =============================================================
+// CONFIGURATION
+// =============================================================
+
+const GITHUB_OWNER =
+    "hanumanatee";
+
+const GITHUB_REPOSITORY =
+    "patchworld-midi";
+
+const GITHUB_BRANCH =
+    "main";
+
+const MIDI_FOLDER =
+    "midi";
+
+
+const GITHUB_API_URL =
+    "https://api.github.com/repos/" +
+    GITHUB_OWNER +
+    "/" +
+    GITHUB_REPOSITORY +
+    "/contents/" +
+    MIDI_FOLDER +
+    "?ref=" +
+    GITHUB_BRANCH;
+
+
+const MIDI_BASE_URL =
+    "https://" +
+    GITHUB_OWNER +
+    ".github.io/" +
+    GITHUB_REPOSITORY +
+    "/" +
+    MIDI_FOLDER +
+    "/";
+
+
+const CHANNELS = {
+
+    time: {
+        index: "midi_time_index",
+        value: "midi_time_value"
+    },
+
+    type: {
+        index: "midi_type_index",
+        value: "midi_type_value"
+    },
+
+    data1: {
+        index: "midi_data1_index",
+        value: "midi_data1_value"
+    },
+
+    data2: {
+        index: "midi_data2_index",
+        value: "midi_data2_value"
+    },
+
+    channel: {
+        index: "midi_channel_index",
+        value: "midi_channel_value"
+    },
+
+    ack:
+        "midi_ack",
+
+    nak:
+        "midi_nak",
+
+    eventCount:
+        "midi_event_count",
+
+    eventsRequested:
+        "midi_events_requested",
+
+    abortImport:
+        "midi_abort_import",
+
+    importProgress:
+        "midi_import_progress",
+
+    comChannel:
+        "midi_com_channel"
+};
+
+
+const FIELD_ORDER = [
+    "time",
+    "type",
+    "data1",
+    "data2",
+    "channel"
+];
+
+
+const EVENT_TYPES = {
+
+    NOTE_ON: 0,
+    NOTE_OFF: 1,
+    CONTROL_CHANGE: 2,
+    PROGRAM_CHANGE: 3,
+    PITCH_BEND: 4
+};
+
+
+const EVENT_TYPE_NAMES = {
+
+    0: "Note On",
+    1: "Note Off",
+    2: "Control Change",
+    3: "Program Change",
+    4: "Pitch Bend"
+};
+
+
+const MAX_RETRIES = 5;
+
+const ACK_TIMEOUT_MS = 2000;
+
+
+// =============================================================
+// STATE
+// =============================================================
+
+let parsedEvents = [];
+
+let bridgeReady = false;
+let wirelessReady = false;
+
+let importing = false;
+let abortRequested = false;
+
+let currentEventIndex = 0;
+let currentFieldIndex = 0;
+
+let completedWrites = 0;
+let ackCount = 0;
+let nakCount = 0;
+let retryCount = 0;
+let retryForCurrentWrite = 0;
+
+let waitingForResponse = false;
+let responseTimer = null;
+
+let importEventLimit = 0;
+
+let pendingEventRequest = null;
+
+let midiComChannel = 0;
+
+
+// =============================================================
+// UI HELPERS
+// =============================================================
+
+function setStatus(text) {
+
+    document.getElementById(
+        "status"
+    ).textContent = text;
+}
+
+
+function updateCounters() {
+
+    document.getElementById(
+        "completedWrites"
+    ).textContent =
+        completedWrites;
+
+    document.getElementById(
+        "ackCount"
+    ).textContent =
+        ackCount;
+
+    document.getElementById(
+        "nakCount"
+    ).textContent =
+        nakCount;
+
+    document.getElementById(
+        "retryCount"
+    ).textContent =
+        retryCount;
+}
+
+
+function resetImportStats() {
+
+    completedWrites = 0;
+    ackCount = 0;
+    nakCount = 0;
+    retryCount = 0;
+    retryForCurrentWrite = 0;
+
+    document.getElementById(
+        "currentWrite"
+    ).textContent =
+        "-";
+
+    updateCounters();
+}
+
+
+function updateImportButton() {
+
+    document.getElementById(
+        "importButton"
+    ).disabled = !(
+
+        parsedEvents.length > 0 &&
+        bridgeReady &&
+        wirelessReady &&
+        !importing
+    );
+}
+
+
+function clearMidiDisplay() {
+
+    parsedEvents = [];
+
+    importEventLimit = 0;
+
+    document.getElementById(
+        "midiName"
+    ).textContent = "-";
+
+    document.getElementById(
+        "ppq"
+    ).textContent = "-";
+
+    document.getElementById(
+        "trackCount"
+    ).textContent = "-";
+
+    document.getElementById(
+        "noteCount"
+    ).textContent = "-";
+
+    document.getElementById(
+        "eventCount"
+    ).textContent = "-";
+
+    document.getElementById(
+        "eventTypeCounts"
+    ).textContent = "-";
+
+    document.getElementById(
+        "channelCount"
+    ).textContent = "-";
+
+    document.getElementById(
+        "eventLimit"
+    ).textContent = "-";
+
+    document.getElementById(
+        "duration"
+    ).textContent = "-";
+
+    document.getElementById(
+        "writesRequired"
+    ).textContent = "-";
+
+    document.getElementById(
+        "trackInfo"
+    ).textContent =
+        "No MIDI loaded yet.";
+
+    document.getElementById(
+        "preview"
+    ).textContent =
+        "No MIDI loaded yet.";
+
+    updateImportButton();
+}
+
+
+// =============================================================
+// EVENT TYPE COUNTS
+// =============================================================
+
+function makeEventTypeCounts(events) {
+
+    const counts =
+        new Map();
+
+
+    for (
+        const event
+        of events
+    ) {
+
+        counts.set(
+            event.type,
+            (
+                counts.get(
+                    event.type
+                ) || 0
+            ) + 1
+        );
+    }
+
+
+    return Array.from(
+        counts.entries()
+    )
+    .sort(
+        function(a, b) {
+
+            return a[0] - b[0];
+        }
+    )
+    .map(
+        function(entry) {
+
+            const type =
+                entry[0];
+
+            const count =
+                entry[1];
+
+
+            const name =
+                EVENT_TYPE_NAMES[type] ||
+                (
+                    "Type " +
+                    type
+                );
+
+
+            return (
+                name +
+                " (" +
+                type +
+                "): " +
+                count
+            );
+        }
+    )
+    .join(
+        "   |   "
+    );
+}
+
+
+// =============================================================
+// MIDI VALUE HELPERS
+// =============================================================
+
+function midi7BitFromNormalized(value) {
+
+    return Math.max(
+        0,
+        Math.min(
+            127,
+            Math.round(
+                Number(value) *
+                127
+            )
+        )
+    );
+}
+
+
+// =============================================================
+// GITHUB MIDI DIRECTORY
+// =============================================================
+
+async function loadMidiDirectory() {
+
+    const select =
+        document.getElementById(
+            "fileSelect"
+        );
+
+    const loadButton =
+        document.getElementById(
+            "loadButton"
+        );
+
+
+    try {
+
+        setStatus(
+            "Reading MIDI directory..."
+        );
+
+
+        const response =
+            await fetch(
+
+                GITHUB_API_URL +
+                "&t=" +
+                Date.now(),
+
+                {
+                    cache: "no-store",
+
+                    headers: {
+                        "Accept":
+                            "application/vnd.github+json"
+                    }
+                }
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "GitHub API HTTP " +
+                response.status +
+                " " +
+                response.statusText
+            );
+        }
+
+
+        const entries =
+            await response.json();
+
+
+        if (
+            !Array.isArray(entries)
+        ) {
+
+            throw new Error(
+                "Unexpected GitHub directory response."
+            );
+        }
+
+
+        const files =
+            entries
+                .filter(
+                    entry =>
+                        entry.type === "file" &&
+                        typeof entry.name === "string" &&
+                        entry.name
+                            .toLowerCase()
+                            .endsWith(".mid")
+                )
+                .map(
+                    entry =>
+                        entry.name
+                )
+                .sort(
+                    function(a, b) {
+
+                        return a.localeCompare(
+                            b,
+                            undefined,
+                            {
+                                numeric: true,
+                                sensitivity: "base"
+                            }
+                        );
+                    }
+                );
+
+
+        select.innerHTML = "";
+
+
+        if (
+            files.length === 0
+        ) {
+
+            const option =
+                document.createElement(
+                    "option"
+                );
+
+            option.textContent =
+                "No .mid files found";
+
+            select.appendChild(
+                option
+            );
+
+
+            select.disabled =
+                true;
+
+            loadButton.disabled =
+                true;
+
+
+            setStatus(
+                "No .mid files found in the GitHub midi folder."
+            );
+
+
+            return;
+        }
+
+
+        for (
+            const filename
+            of files
+        ) {
+
+            const option =
+                document.createElement(
+                    "option"
+                );
+
+            option.value =
+                filename;
+
+            option.textContent =
+                filename;
+
+            select.appendChild(
+                option
+            );
+        }
+
+
+        select.disabled =
+            false;
+
+        loadButton.disabled =
+            false;
+
+
+        document.getElementById(
+            "selectedFile"
+        ).textContent =
+            select.value;
+
+
+        setStatus(
+            files.length +
+            " MIDI file" +
+            (
+                files.length === 1
+                ? ""
+                : "s"
+            ) +
+            " found."
+        );
+
+    }
+
+    catch (error) {
+
+        console.error(
+            error
+        );
+
+
+        select.innerHTML =
+            "<option>MIDI directory error</option>";
+
+
+        select.disabled =
+            true;
+
+        loadButton.disabled =
+            true;
+
+
+        setStatus(
+            "ERROR reading MIDI directory: " +
+            error.message
+        );
+    }
+}
+
+
+// =============================================================
+// DIRECT MIDI -> GENERIC PW EVENTS
+// =============================================================
+
+function convertMidi(midi) {
+
+    const events = [];
+
+    const channelsFound =
+        new Set();
+
+    let totalNotes = 0;
+
+
+    midi.tracks.forEach(
+        function(
+            track,
+            trackIndex
+        ) {
+
+            const channel =
+                track.channel;
+
+
+            /*
+                If this track contains any channel-oriented
+                musical data, regard its channel as detected.
+            */
+
+            if (
+                track.notes.length > 0 ||
+                track.pitchBends.length > 0
+            ) {
+
+                channelsFound.add(
+                    channel
+                );
+            }
+
+
+            // =====================================================
+            // NOTES
+            // =====================================================
+
+            track.notes.forEach(
+                function(note) {
+
+                    totalNotes++;
+
+
+                    const velocity =
+                        midi7BitFromNormalized(
+                            note.velocity
+                        );
+
+
+                    // -------------------------------------------------
+                    // TYPE 0 = NOTE ON
+                    //
+                    // Data 1 = MIDI note number
+                    // Data 2 = velocity
+                    // -------------------------------------------------
+
+                    events.push({
+
+                        time:
+                            note.time,
+
+                        type:
+                            EVENT_TYPES.NOTE_ON,
+
+                        data1:
+                            note.midi,
+
+                        data2:
+                            velocity,
+
+                        channel:
+                            channel,
+
+                        sourceTrack:
+                            trackIndex,
+
+                        sourceTicks:
+                            note.ticks,
+
+                        sourceType:
+                            "note_on"
+                    });
+
+
+                    // -------------------------------------------------
+                    // TYPE 1 = NOTE OFF
+                    //
+                    // Data 1 = MIDI note number
+                    // Data 2 = release velocity
+                    // -------------------------------------------------
+
+                    events.push({
+
+                        time:
+                            note.time +
+                            note.duration,
+
+                        type:
+                            EVENT_TYPES.NOTE_OFF,
+
+                        data1:
+                            note.midi,
+
+                        data2:
+                            (
+                                Number.isFinite(
+                                    note.noteOffVelocity
+                                )
+                                ? midi7BitFromNormalized(
+                                    note.noteOffVelocity
+                                )
+                                : 0
+                            ),
+
+                        channel:
+                            channel,
+
+                        sourceTrack:
+                            trackIndex,
+
+                        sourceTicks:
+                            note.ticks +
+                            note.durationTicks,
+
+                        sourceType:
+                            "note_off"
+                    });
+
+                }
+            );
+
+
+            // =====================================================
+            // CONTROL CHANGE
+            //
+            // ToneJS stores these in track.controlChanges,
+            // indexed by controller number.
+            //
+            // TYPE 2 = CONTROL CHANGE
+            // Data 1 = controller number
+            // Data 2 = controller value 0-127
+            // =====================================================
+
+            for (
+                let controllerNumber = 0;
+                controllerNumber < 128;
+                controllerNumber++
+            ) {
+
+                const changes =
+                    track.controlChanges[
+                        controllerNumber
+                    ];
+
+
+                if (
+                    !Array.isArray(
+                        changes
+                    )
+                ) {
+
+                    continue;
+                }
+
+
+                if (
+                    changes.length > 0
+                ) {
+
+                    channelsFound.add(
+                        channel
+                    );
+                }
+
+
+                changes.forEach(
+                    function(cc) {
+
+                        events.push({
+
+                            time:
+                                cc.time,
+
+                            type:
+                                EVENT_TYPES.CONTROL_CHANGE,
+
+                            data1:
+                                controllerNumber,
+
+                            data2:
+                                midi7BitFromNormalized(
+                                    cc.value
+                                ),
+
+                            channel:
+                                channel,
+
+                            sourceTrack:
+                                trackIndex,
+
+                            sourceTicks:
+                                cc.ticks,
+
+                            sourceType:
+                                "control_change"
+                        });
+
+                    }
+                );
+            }
+
+
+            // =====================================================
+            // PROGRAM CHANGE
+            //
+            // TYPE 3 is reserved.
+            //
+            // @tonejs/midi represents the resulting instrument
+            // on the Track, but does not expose timestamped
+            // Program Change events through track.programChanges.
+            //
+            // Therefore no type-3 events are synthesized here.
+            // =====================================================
+
+
+            // =====================================================
+            // PITCH BEND
+            //
+            // TYPE 4 = PITCH BEND
+            //
+            // Data 1 = ToneJS PitchBend.value
+            // Data 2 = 0
+            //
+            // Keep ToneJS's parsed bend value intact for now.
+            // We can choose a PW-side pitch-bend scaling convention
+            // when the event handler is implemented.
+            // =====================================================
+
+            track.pitchBends.forEach(
+                function(bend) {
+
+                    channelsFound.add(
+                        channel
+                    );
+
+
+                    events.push({
+
+                        time:
+                            bend.time,
+
+                        type:
+                            EVENT_TYPES.PITCH_BEND,
+
+                        data1:
+                            bend.value,
+
+                        data2:
+                            0,
+
+                        channel:
+                            channel,
+
+                        sourceTrack:
+                            trackIndex,
+
+                        sourceTicks:
+                            bend.ticks,
+
+                        sourceType:
+                            "pitch_bend"
+                    });
+
+                }
+            );
+
+        }
+    );
+
+
+    // =============================================================
+    // MERGE ALL EVENTS CHRONOLOGICALLY
+    // =============================================================
+
+    events.sort(
+        function(a, b) {
+
+            if (
+                a.time !== b.time
+            ) {
+
+                return (
+                    a.time -
+                    b.time
+                );
+            }
+
+
+            /*
+                Where possible, retain source tick ordering.
+            */
+
+            if (
+                Number.isFinite(
+                    a.sourceTicks
+                ) &&
+                Number.isFinite(
+                    b.sourceTicks
+                ) &&
+                a.sourceTicks !==
+                b.sourceTicks
+            ) {
+
+                return (
+                    a.sourceTicks -
+                    b.sourceTicks
+                );
+            }
+
+
+            /*
+                At an identical timestamp/tick, keep Note Off
+                ahead of Note On.
+
+                Other event categories retain deterministic
+                ordering around those note events.
+            */
+
+            const priority = {
+
+                1: 0,   // Note Off
+                2: 1,   // Control Change
+                3: 2,   // Program Change
+                4: 3,   // Pitch Bend
+                0: 4    // Note On
+            };
+
+
+            const priorityA =
+                priority[a.type] ??
+                100;
+
+            const priorityB =
+                priority[b.type] ??
+                100;
+
+
+            if (
+                priorityA !==
+                priorityB
+            ) {
+
+                return (
+                    priorityA -
+                    priorityB
+                );
+            }
+
+
+            if (
+                a.channel !==
+                b.channel
+            ) {
+
+                return (
+                    a.channel -
+                    b.channel
+                );
+            }
+
+
+            if (
+                a.data1 !==
+                b.data1
+            ) {
+
+                return (
+                    a.data1 -
+                    b.data1
+                );
+            }
+
+
+            return (
+                a.sourceTrack -
+                b.sourceTrack
+            );
+        }
+    );
+
+
+    // =============================================================
+    // ASSIGN MIDI FLASH EVENT INDICES
+    // =============================================================
+
+    events.forEach(
+        function(
+            event,
+            index
+        ) {
+
+            event.index =
+                index;
+        }
+    );
+
+
+    const channelList =
+        Array.from(
+            channelsFound
+        )
+        .sort(
+            function(a, b) {
+
+                return a - b;
+            }
+        );
+
+
+    return {
+
+        events:
+            events,
+
+        totalNotes:
+            totalNotes,
+
+        channels:
+            channelList
+    };
+}
+
+
+// =============================================================
+// TRACK INFORMATION
+// =============================================================
+
+function makeTrackInfo(midi) {
+
+    const lines = [];
+
+
+    midi.tracks.forEach(
+        function(
+            track,
+            index
+        ) {
+
+            let ccCount = 0;
+
+
+            for (
+                let controllerNumber = 0;
+                controllerNumber < 128;
+                controllerNumber++
+            ) {
+
+                const changes =
+                    track.controlChanges[
+                        controllerNumber
+                    ];
+
+
+                if (
+                    Array.isArray(
+                        changes
+                    )
+                ) {
+
+                    ccCount +=
+                        changes.length;
+                }
+            }
+
+
+            lines.push(
+                "Track " +
+                index
+            );
+
+            lines.push(
+                "  Name: " +
+                (
+                    track.name ||
+                    "(none)"
+                )
+            );
+
+            lines.push(
+                "  Channel: " +
+                track.channel
+            );
+
+            lines.push(
+                "  Notes: " +
+                track.notes.length
+            );
+
+            lines.push(
+                "  Control Changes: " +
+                ccCount
+            );
+
+            lines.push(
+                "  Pitch Bends: " +
+                track.pitchBends.length
+            );
+
+
+            if (
+                track.instrument
+            ) {
+
+                lines.push(
+                    "  Instrument: " +
+                    track.instrument.name +
+                    " (" +
+                    track.instrument.number +
+                    ")"
+                );
+            }
+
+
+            lines.push("");
+        }
+    );
+
+
+    return lines.join(
+        "\n"
+    );
+}
+
+
+// =============================================================
+// EVENT PREVIEW
+// =============================================================
+
+function makePreview(events) {
+
+    const count =
+        Math.min(
+            events.length,
+            20
+        );
+
+    const lines = [];
+
+
+    for (
+        let i = 0;
+        i < count;
+        i++
+    ) {
+
+        const e =
+            events[i];
+
+
+        const typeName =
+            (
+                EVENT_TYPE_NAMES[
+                    e.type
+                ] ||
+                (
+                    "Type " +
+                    e.type
+                )
+            )
+            .toUpperCase();
+
+
+        lines.push(
+
+            String(
+                e.index
+            )
+            .padStart(
+                4,
+                " "
+            ) +
+
+            "   t=" +
+
+            e.time
+                .toFixed(6)
+                .padStart(
+                    11,
+                    " "
+                ) +
+
+            "   " +
+
+            typeName
+                .padEnd(
+                    14,
+                    " "
+                ) +
+
+            "   ch=" +
+            e.channel +
+
+            "   data1=" +
+            e.data1 +
+
+            "   data2=" +
+            e.data2 +
+
+            "   track=" +
+            e.sourceTrack
+        );
+    }
+
+
+    if (
+        events.length >
+        count
+    ) {
+
+        lines.push(
+            "",
+            "... " +
+            (
+                events.length -
+                count
+            ) +
+            " more events"
+        );
+    }
+
+
+    return lines.join(
+        "\n"
+    );
+}
+
+
+// =============================================================
+// EVENT LIMIT
+// =============================================================
+
+function setEventLimit(
+    requestedValue
+) {
+
+    if (
+        parsedEvents.length === 0
+    ) {
+
+        pendingEventRequest =
+            requestedValue;
+
+        return;
+    }
+
+
+    let value =
+        Math.floor(
+            Number(
+                requestedValue
+            )
+        );
+
+
+    if (
+        !Number.isFinite(
+            value
+        )
+    ) {
+
+        return;
+    }
+
+
+    value =
+        Math.max(
+            1,
+            Math.min(
+                value,
+                parsedEvents.length
+            )
+        );
+
+
+    importEventLimit =
+        value;
+
+
+    document.getElementById(
+        "eventLimit"
+    ).textContent =
+        value;
+
+
+    updateWriteCount();
+}
+
+
+function updateWriteCount() {
+
+    if (
+        parsedEvents.length === 0 ||
+        importEventLimit === 0
+    ) {
+
+        document.getElementById(
+            "writesRequired"
+        ).textContent =
+            "-";
+
+        return;
+    }
+
+
+    document.getElementById(
+        "writesRequired"
+    ).textContent =
+
+        importEventLimit *
+        FIELD_ORDER.length;
+}
+
+
+// =============================================================
+// LOAD BINARY MIDI
+// =============================================================
+
+async function loadMidiFile() {
+
+    const select =
+        document.getElementById(
+            "fileSelect"
+        );
+
+    const filename =
+        select.value;
+
+
+    if (!filename) {
+        return;
+    }
+
+
+    const button =
+        document.getElementById(
+            "loadButton"
+        );
+
+
+    button.disabled =
+        true;
+
+
+    resetImportStats();
+
+    clearMidiDisplay();
+
+
+    document.getElementById(
+        "selectedFile"
+    ).textContent =
+        filename;
+
+
+    setStatus(
+        "Loading binary MIDI: " +
+        filename +
+        "..."
+    );
+
+
+    try {
+
+        const url =
+
+            MIDI_BASE_URL +
+
+            encodeURI(
+                filename
+            ) +
+
+            "?t=" +
+
+            Date.now();
+
+
+        const response =
+            await fetch(
+
+                url,
+
+                {
+                    cache:
+                        "no-store"
+                }
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "HTTP " +
+                response.status +
+                " " +
+                response.statusText
+            );
+        }
+
+
+        const arrayBuffer =
+            await response.arrayBuffer();
+
+
+        const midi =
+            new Midi(
+                arrayBuffer
+            );
+
+
+        const result =
+            convertMidi(
+                midi
+            );
+
+
+        parsedEvents =
+            result.events;
+
+
+        document.getElementById(
+            "midiName"
+        ).textContent =
+            midi.name ||
+            "(none)";
+
+
+        document.getElementById(
+            "ppq"
+        ).textContent =
+            midi.header.ppq;
+
+
+        document.getElementById(
+            "trackCount"
+        ).textContent =
+            midi.tracks.length;
+
+
+        document.getElementById(
+            "noteCount"
+        ).textContent =
+            result.totalNotes;
+
+
+        document.getElementById(
+            "eventCount"
+        ).textContent =
+            parsedEvents.length;
+
+
+        document.getElementById(
+            "eventTypeCounts"
+        ).textContent =
+            makeEventTypeCounts(
+                parsedEvents
+            );
+
+
+        document.getElementById(
+            "channelCount"
+        ).textContent =
+
+            result.channels.length +
+
+            " (" +
+
+            result.channels.join(
+                ", "
+            ) +
+
+            ")";
+
+
+        document.getElementById(
+            "duration"
+        ).textContent =
+
+            midi.duration
+                .toFixed(6) +
+
+            " seconds";
+
+
+        document.getElementById(
+            "trackInfo"
+        ).textContent =
+            makeTrackInfo(
+                midi
+            );
+
+
+        document.getElementById(
+            "preview"
+        ).textContent =
+            makePreview(
+                parsedEvents
+            );
+
+
+        if (
+            parsedEvents.length > 0
+        ) {
+
+            importEventLimit =
+                parsedEvents.length;
+
+
+            document.getElementById(
+                "eventLimit"
+            ).textContent =
+                importEventLimit;
+
+
+            if (
+                pendingEventRequest !==
+                null
+            ) {
+
+                const request =
+                    pendingEventRequest;
+
+                pendingEventRequest =
+                    null;
+
+                setEventLimit(
+                    request
+                );
+            }
+
+        } else {
+
+            importEventLimit =
+                0;
+
+            document.getElementById(
+                "eventLimit"
+            ).textContent =
+                "-";
+        }
+
+
+        updateWriteCount();
+
+
+        setStatus(
+            "Binary MIDI parsed successfully."
+        );
+
+    }
+
+    catch (error) {
+
+        console.error(
+            error
+        );
+
+
+        clearMidiDisplay();
+
+
+        document.getElementById(
+            "selectedFile"
+        ).textContent =
+            filename;
+
+
+        setStatus(
+            "ERROR: " +
+            error.message
+        );
+
+
+        document.getElementById(
+            "preview"
+        ).textContent =
+            String(
+                error.stack ||
+                error
+            );
+    }
+
+    finally {
+
+        button.disabled =
+            false;
+
+
+        updateImportButton();
+    }
+}
+
+
+// =============================================================
+// PATCHWORLD WIRELESS SUBSCRIPTIONS
+// =============================================================
+
+async function subscribeToResponses() {
+
+    try {
+
+        document.getElementById(
+            "wirelessStatus"
+        ).textContent =
+            "Subscribing...";
+
+
+        await PatchWorld.subscribeWifi(
+            CHANNELS.ack
+        );
+
+
+        await PatchWorld.subscribeWifi(
+            CHANNELS.nak
+        );
+
+
+        await PatchWorld.subscribeWifi(
+            CHANNELS.eventsRequested
+        );
+
+
+        await PatchWorld.subscribeWifi(
+            CHANNELS.abortImport
+        );
+
+
+        await PatchWorld.subscribeWifi(
+            CHANNELS.comChannel
+        );
+
+
+        wirelessReady =
+            true;
+
+
+        document.getElementById(
+            "wirelessStatus"
+        ).textContent =
+            "ACK/NAK/request/abort/channel subscribed";
+
+
+        updateImportButton();
+
+    }
+
+    catch (error) {
+
+        wirelessReady =
+            false;
+
+
+        document.getElementById(
+            "wirelessStatus"
+        ).textContent =
+            "Subscription ERROR";
+
+
+        setStatus(
+            "Wireless subscription failed: " +
+            error
+        );
+    }
+}
+
+
+// =============================================================
+// PATCHWORLD BRIDGE
+// =============================================================
+
+PatchWorld.onData =
+    async function(context) {
+
+        bridgeReady =
+            true;
+
+
+        document.getElementById(
+            "bridgeStatus"
+        ).textContent =
+            "Connected";
+
+
+        await subscribeToResponses();
+
+
+        updateImportButton();
+    };
+
+
+PatchWorld.onDisconnected =
+    function() {
+
+        bridgeReady =
+            false;
+
+        wirelessReady =
+            false;
+
+
+        document.getElementById(
+            "bridgeStatus"
+        ).textContent =
+            "Disconnected";
+
+
+        document.getElementById(
+            "wirelessStatus"
+        ).textContent =
+            "Not subscribed";
+
+
+        if (importing) {
+
+            stopImport(
+                "Bridge disconnected during import."
+            );
+        }
+
+
+        updateImportButton();
+    };
+
+
+// =============================================================
+// CURRENT ARRAY WRITE
+// =============================================================
+
+function getCurrentFieldInfo() {
+
+    const event =
+        parsedEvents[
+            currentEventIndex
+        ];
+
+
+    const fieldName =
+        FIELD_ORDER[
+            currentFieldIndex
+        ];
+
+
+    return {
+
+        event:
+            event,
+
+        fieldName:
+            fieldName,
+
+        index:
+            event.index,
+
+        value:
+            event[
+                fieldName
+            ],
+
+        channels:
+            CHANNELS[
+                fieldName
+            ]
+    };
+}
+
+
+// =============================================================
+// SEND ONE ARRAY WRITE
+// =============================================================
+
+async function sendCurrentWrite() {
+
+    if (
+        !importing ||
+        abortRequested
+    ) {
+
+        return;
+    }
+
+
+    if (
+        currentEventIndex >=
+        importEventLimit
+    ) {
+
+        completeImport();
+
+        return;
+    }
+
+
+    const info =
+        getCurrentFieldInfo();
+
+
+    document.getElementById(
+        "currentWrite"
+    ).textContent =
+
+        info.fieldName +
+
+        "[" +
+        info.index +
+        "] = " +
+
+        info.value +
+
+        "  [Flash " +
+
+        midiComChannel +
+
+        "]";
+
+
+    waitingForResponse =
+        true;
+
+
+    clearTimeout(
+        responseTimer
+    );
+
+
+    responseTimer =
+        setTimeout(
+
+            function() {
+
+                if (
+                    !waitingForResponse ||
+                    !importing
+                ) {
+
+                    return;
+                }
+
+
+                waitingForResponse =
+                    false;
+
+
+                retryCurrentWrite(
+                    "ACK timeout"
+                );
+
+            },
+
+            ACK_TIMEOUT_MS
+        );
+
+
+    try {
+
+        await PatchWorld.sendWirelessJolt(
+            info.channels.index,
+            info.index,
+            midiComChannel
+        );
+
+
+        await PatchWorld.sendWirelessJolt(
+            info.channels.value,
+            info.value,
+            midiComChannel
+        );
+
+    }
+
+    catch (error) {
+
+        clearTimeout(
+            responseTimer
+        );
+
+
+        waitingForResponse =
+            false;
+
+
+        retryCurrentWrite(
+            "Send error: " +
+            error
+        );
+    }
+}
+
+
+// =============================================================
+// RECEIVE ACK / NAK / REQUEST / ABORT / COMMUNICATION CHANNEL
+// =============================================================
+
+PatchWorld.onWifiJolt =
+    function(
+        channel,
+        value
+    ) {
+
+
+        if (
+            channel ===
+            CHANNELS.comChannel
+        ) {
+
+            if (importing) {
+
+                console.warn(
+                    "Ignoring MIDI Flash channel change during import."
+                );
+
+                return;
+            }
+
+
+            const requestedChannel =
+                Math.floor(
+                    Number(
+                        value
+                    )
+                );
+
+
+            if (
+                !Number.isFinite(
+                    requestedChannel
+                ) ||
+                requestedChannel < 0
+            ) {
+
+                return;
+            }
+
+
+            midiComChannel =
+                requestedChannel;
+
+
+            document.getElementById(
+                "comChannel"
+            ).textContent =
+                midiComChannel;
+
+
+            setStatus(
+                "MIDI Flash communication channel set to " +
+                midiComChannel
+            );
+
+
+            return;
+        }
+
+
+        if (
+            channel ===
+            CHANNELS.abortImport
+        ) {
+
+            if (importing) {
+
+                stopImport(
+                    "Import aborted from Patchworld."
+                );
+            }
+
+            return;
+        }
+
+
+        if (
+            channel ===
+            CHANNELS.eventsRequested
+        ) {
+
+            if (importing) {
+                return;
+            }
+
+
+            const requested =
+                Math.floor(
+                    Number(
+                        value
+                    )
+                );
+
+
+            if (
+                !Number.isFinite(
+                    requested
+                )
+            ) {
+
+                return;
+            }
+
+
+            if (
+                parsedEvents.length === 0
+            ) {
+
+                pendingEventRequest =
+                    requested;
+
+
+                setStatus(
+                    "Requested event count received: " +
+                    requested +
+                    " (waiting for MIDI file)"
+                );
+
+            } else {
+
+                setEventLimit(
+                    requested
+                );
+
+
+                setStatus(
+                    "Events requested from Patchworld: " +
+                    importEventLimit
+                );
+            }
+
+
+            return;
+        }
+
+
+        if (!importing) {
+            return;
+        }
+
+
+        if (
+            channel ===
+            CHANNELS.ack
+        ) {
+
+            if (
+                !waitingForResponse
+            ) {
+
+                return;
+            }
+
+
+            clearTimeout(
+                responseTimer
+            );
+
+
+            waitingForResponse =
+                false;
+
+
+            ackCount++;
+
+            completedWrites++;
+
+
+            retryForCurrentWrite =
+                0;
+
+
+            updateCounters();
+
+
+            advanceToNextWrite();
+
+            return;
+        }
+
+
+        if (
+            channel ===
+            CHANNELS.nak
+        ) {
+
+            if (
+                !waitingForResponse
+            ) {
+
+                return;
+            }
+
+
+            clearTimeout(
+                responseTimer
+            );
+
+
+            waitingForResponse =
+                false;
+
+
+            nakCount++;
+
+
+            updateCounters();
+
+
+            retryCurrentWrite(
+                "NAK received"
+            );
+        }
+    };
+
+
+// =============================================================
+// ADVANCE TO NEXT WRITE
+// =============================================================
+
+async function advanceToNextWrite() {
+
+    currentFieldIndex++;
+
+
+    if (
+        currentFieldIndex >=
+        FIELD_ORDER.length
+    ) {
+
+        currentFieldIndex =
+            0;
+
+        currentEventIndex++;
+
+
+        const progress =
+            currentEventIndex /
+            importEventLimit;
+
+
+        try {
+
+            await PatchWorld.sendWirelessJolt(
+                CHANNELS.importProgress,
+                progress
+            );
+
+        }
+
+        catch (error) {
+
+            console.warn(
+                "Failed to send MIDI import progress:",
+                error
+            );
+        }
+    }
+
+
+    if (
+        currentEventIndex >=
+        importEventLimit
+    ) {
+
+        completeImport();
+
+        return;
+    }
+
+
+    sendCurrentWrite();
+}
+
+
+// =============================================================
+// RETRY
+// =============================================================
+
+function retryCurrentWrite(
+    reason
+) {
+
+    retryForCurrentWrite++;
+
+    retryCount++;
+
+
+    updateCounters();
+
+
+    if (
+        retryForCurrentWrite >
+        MAX_RETRIES
+    ) {
+
+        const info =
+            getCurrentFieldInfo();
+
+
+        stopImport(
+
+            "FAILED: " +
+
+            info.fieldName +
+
+            "[" +
+            info.index +
+            "] after " +
+
+            MAX_RETRIES +
+
+            " retries. " +
+
+            reason
+        );
+
+
+        return;
+    }
+
+
+    setStatus(
+
+        "Retry " +
+
+        retryForCurrentWrite +
+
+        "/" +
+
+        MAX_RETRIES +
+
+        ": " +
+
+        reason
+    );
+
+
+    setTimeout(
+        sendCurrentWrite,
+        0
+    );
+}
+
+
+// =============================================================
+// START IMPORT
+// =============================================================
+
+function startImport() {
+
+    if (
+        parsedEvents.length === 0 ||
+        !bridgeReady ||
+        !wirelessReady ||
+        importEventLimit === 0
+    ) {
+
+        return;
+    }
+
+
+    importing =
+        true;
+
+
+    abortRequested =
+        false;
+
+
+    currentEventIndex =
+        0;
+
+
+    currentFieldIndex =
+        0;
+
+
+    completedWrites =
+        0;
+
+
+    ackCount =
+        0;
+
+
+    nakCount =
+        0;
+
+
+    retryCount =
+        0;
+
+
+    retryForCurrentWrite =
+        0;
+
+
+    waitingForResponse =
+        false;
+
+
+    updateCounters();
+
+
+    document.getElementById(
+        "importButton"
+    ).disabled =
+        true;
+
+
+    document.getElementById(
+        "loadButton"
+    ).disabled =
+        true;
+
+
+    document.getElementById(
+        "fileSelect"
+    ).disabled =
+        true;
+
+
+    document.getElementById(
+        "abortButton"
+    ).disabled =
+        false;
+
+
+    setStatus(
+        "Import started to MIDI Flash channel " +
+        midiComChannel +
+        "..."
+    );
+
+
+    PatchWorld.sendWirelessJolt(
+        CHANNELS.importProgress,
+        0
+    ).catch(
+
+        error =>
+            console.warn(
+                "Failed to send initial MIDI progress:",
+                error
+            )
+    );
+
+
+    sendCurrentWrite();
+}
+
+
+// =============================================================
+// IMPORT COMPLETE
+// =============================================================
+
+async function completeImport() {
+
+    clearTimeout(
+        responseTimer
+    );
+
+
+    importing =
+        false;
+
+
+    waitingForResponse =
+        false;
+
+
+    try {
+
+        await PatchWorld.sendWirelessJolt(
+            CHANNELS.eventCount,
+            importEventLimit,
+            midiComChannel
+        );
+
+    }
+
+    catch (error) {
+
+        setStatus(
+            "Arrays imported, but midi_event_count send failed: " +
+            error
+        );
+
+
+        restoreControls();
+
+        return;
+    }
+
+
+    document.getElementById(
+        "currentWrite"
+    ).textContent =
+        "Complete";
+
+
+    setStatus(
+
+        "IMPORT COMPLETE — " +
+
+        completedWrites +
+
+        " verified writes. " +
+
+        "Event count sent: " +
+
+        importEventLimit +
+
+        " to MIDI Flash channel " +
+
+        midiComChannel
+    );
+
+
+    restoreControls();
+}
+
+
+// =============================================================
+// RESTORE CONTROLS
+// =============================================================
+
+function restoreControls() {
+
+    document.getElementById(
+        "abortButton"
+    ).disabled =
+        true;
+
+
+    document.getElementById(
+        "loadButton"
+    ).disabled =
+        false;
+
+
+    document.getElementById(
+        "fileSelect"
+    ).disabled =
+        false;
+
+
+    updateImportButton();
+}
+
+
+// =============================================================
+// ABORT / FAILURE
+// =============================================================
+
+function stopImport(reason) {
+
+    clearTimeout(
+        responseTimer
+    );
+
+
+    abortRequested =
+        true;
+
+
+    importing =
+        false;
+
+
+    waitingForResponse =
+        false;
+
+
+    setStatus(
+        reason
+    );
+
+
+    restoreControls();
+}
+
+
+// =============================================================
+// UI EVENTS
+// =============================================================
+
+document.getElementById(
+    "fileSelect"
+).addEventListener(
+
+    "change",
+
+    function() {
+
+        clearMidiDisplay();
+
+        resetImportStats();
+
+
+        document.getElementById(
+            "selectedFile"
+        ).textContent =
+            this.value;
+
+
+        setStatus(
+            "Selected file has not been parsed yet."
+        );
+    }
+);
+
+
+document.getElementById(
+    "loadButton"
+).addEventListener(
+    "click",
+    loadMidiFile
+);
+
+
+document.getElementById(
+    "importButton"
+).addEventListener(
+    "click",
+    startImport
+);
+
+
+document.getElementById(
+    "abortButton"
+).addEventListener(
+
+    "click",
+
+    function() {
+
+        stopImport(
+            "Import aborted by user."
+        );
+    }
+);
+
+
+// =============================================================
+// INITIALIZE
+// =============================================================
+
+loadMidiDirectory();
+
+</script>
+
+</body>
+</html>
