@@ -61,7 +61,9 @@
         #eventTypeCounts,
         #filteredEventTypeCounts,
         #requestedEventTypeCounts,
-        #expectedSounds {
+        #expectedSounds,
+        #channelPolyphony,
+        #totalPeakPolyphony {
             font-family: monospace;
         }
 
@@ -117,7 +119,7 @@
 
 <body>
 
-<div id="revision">MIDI4 REV 4</div>
+<div id="revision">MIDI4 REV 5</div>
 
 <h1>Patchworld Direct MIDI Importer</h1>
 
@@ -308,6 +310,16 @@
     <div>
         <span class="label">Expected sounds by channel:</span>
         <span id="expectedSounds">-</span>
+    </div>
+
+    <div>
+        <span class="label">Maximum simultaneous voices by channel:</span>
+        <span id="channelPolyphony">-</span>
+    </div>
+
+    <div>
+        <span class="label">Total peak polyphony:</span>
+        <span id="totalPeakPolyphony">-</span>
     </div>
 
     <div>
@@ -537,25 +549,9 @@ let retryForCurrentWrite = 0;
 let waitingForResponse = false;
 let responseTimer = null;
 
-
-/*
-    null means:
-    import all events surviving the type filter.
-
-    If PW sends midi_events_requested, this contains
-    that requested count.
-*/
-
 let requestedEventCount = null;
 
-
-/*
-    Actual number which will be imported after
-    filtering and requested-count clamping.
-*/
-
 let importEventLimit = 0;
-
 
 let pendingEventRequest = null;
 
@@ -714,6 +710,14 @@ function clearMidiDisplay() {
     ).textContent = "-";
 
     document.getElementById(
+        "channelPolyphony"
+    ).textContent = "-";
+
+    document.getElementById(
+        "totalPeakPolyphony"
+    ).textContent = "-";
+
+    document.getElementById(
         "eventLimit"
     ).textContent = "-";
 
@@ -812,6 +816,221 @@ function makeEventTypeCounts(events) {
     .join(
         "   |   "
     );
+}
+
+
+// =============================================================
+// POLYPHONY ANALYSIS
+// =============================================================
+
+function analyzePolyphony(events) {
+
+    const currentByChannel =
+        new Map();
+
+    const maximumByChannel =
+        new Map();
+
+
+    let currentTotal =
+        0;
+
+    let maximumTotal =
+        0;
+
+
+    for (
+        const event
+        of events
+    ) {
+
+        /*
+            Only Note On / Note Off events affect
+            simultaneous voice count.
+        */
+
+        if (
+            event.type !==
+                EVENT_TYPES.NOTE_ON &&
+            event.type !==
+                EVENT_TYPES.NOTE_OFF
+        ) {
+
+            continue;
+        }
+
+
+        const channel =
+            event.channel;
+
+
+        if (
+            !currentByChannel.has(
+                channel
+            )
+        ) {
+
+            currentByChannel.set(
+                channel,
+                0
+            );
+        }
+
+
+        if (
+            !maximumByChannel.has(
+                channel
+            )
+        ) {
+
+            maximumByChannel.set(
+                channel,
+                0
+            );
+        }
+
+
+        let current =
+            currentByChannel.get(
+                channel
+            );
+
+
+        if (
+            event.type ===
+            EVENT_TYPES.NOTE_ON
+        ) {
+
+            current++;
+
+            currentTotal++;
+
+
+            currentByChannel.set(
+                channel,
+                current
+            );
+
+
+            if (
+                current >
+                maximumByChannel.get(
+                    channel
+                )
+            ) {
+
+                maximumByChannel.set(
+                    channel,
+                    current
+                );
+            }
+
+
+            if (
+                currentTotal >
+                maximumTotal
+            ) {
+
+                maximumTotal =
+                    currentTotal;
+            }
+
+        } else {
+
+            /*
+                Generated Note Off events should always
+                correspond to an earlier Note On.
+
+                Clamp at zero so malformed/unusual source
+                material cannot produce negative voice counts.
+            */
+
+            if (
+                current > 0
+            ) {
+
+                current--;
+
+                currentTotal =
+                    Math.max(
+                        0,
+                        currentTotal - 1
+                    );
+
+
+                currentByChannel.set(
+                    channel,
+                    current
+                );
+            }
+        }
+    }
+
+
+    return {
+
+        maximumByChannel:
+            maximumByChannel,
+
+        maximumTotal:
+            maximumTotal
+    };
+}
+
+
+function makeChannelPolyphonyText(
+    analysis
+) {
+
+    const entries =
+        Array.from(
+            analysis
+                .maximumByChannel
+                .entries()
+        )
+        .filter(
+            function(entry) {
+
+                return (
+                    entry[1] >
+                    0
+                );
+            }
+        )
+        .sort(
+            function(a, b) {
+
+                return (
+                    a[0] -
+                    b[0]
+                );
+            }
+        );
+
+
+    if (
+        entries.length === 0
+    ) {
+
+        return "-";
+    }
+
+
+    return entries
+        .map(
+            function(entry) {
+
+                return (
+                    "Channel " +
+                    entry[0] +
+                    " — " +
+                    entry[1]
+                );
+            }
+        )
+        .join(
+            "   |   "
+        );
 }
 
 
@@ -947,17 +1166,6 @@ function refreshFilteredEvents() {
                 );
             }
         );
-
-
-    /*
-        The filtered array is deliberately not given
-        permanent Flash indices here.
-
-        During writing, currentEventIndex is used as
-        the destination array index, guaranteeing
-        contiguous MIDI Flash indices even when
-        source events have been filtered out.
-    */
 
 
     document.getElementById(
@@ -1400,10 +1608,6 @@ function convertMidi(midi) {
                         );
 
 
-                    // TYPE 0 = NOTE ON
-                    // Data1 = note
-                    // Data2 = attack velocity
-
                     events.push({
 
                         time:
@@ -1431,10 +1635,6 @@ function convertMidi(midi) {
                             "note_on"
                     });
 
-
-                    // TYPE 1 = NOTE OFF
-                    // Data1 = note
-                    // Data2 = release velocity
 
                     events.push({
 
@@ -1479,10 +1679,6 @@ function convertMidi(midi) {
 
             // =====================================================
             // CONTROL CHANGE
-            //
-            // TYPE 2
-            // Data1 = controller number
-            // Data2 = controller value
             // =====================================================
 
             for (
@@ -1558,16 +1754,11 @@ function convertMidi(midi) {
             // PROGRAM CHANGE
             //
             // TYPE 3 RESERVED.
-            // No timestamped events currently generated here.
             // =====================================================
 
 
             // =====================================================
             // PITCH BEND
-            //
-            // TYPE 4
-            // Data1 = ToneJS bend value
-            // Data2 = 0
             // =====================================================
 
             if (
@@ -1655,11 +1846,11 @@ function convertMidi(midi) {
 
             const priority = {
 
-                1: 0,   // Note Off
-                2: 1,   // CC
-                3: 2,   // Program Change
-                4: 3,   // Pitch Bend
-                0: 4    // Note On
+                1: 0,
+                2: 1,
+                3: 2,
+                4: 3,
+                0: 4
             };
 
 
@@ -1716,14 +1907,6 @@ function convertMidi(midi) {
     );
 
 
-    /*
-        This index represents position in the fully
-        parsed source stream only.
-
-        MIDI Flash destination indices are reassigned
-        dynamically after filtering.
-    */
-
     events.forEach(
         function(
             event,
@@ -1776,10 +1959,6 @@ function makeExpectedSoundsByChannel(
 
     midi.tracks.forEach(
         function(track) {
-
-            /*
-                Ignore completely empty tracks for this display.
-            */
 
             if (
                 track.notes.length === 0
@@ -2297,6 +2476,26 @@ async function loadMidiFile() {
             );
 
 
+        const polyphony =
+            analyzePolyphony(
+                parsedEvents
+            );
+
+
+        document.getElementById(
+            "channelPolyphony"
+        ).textContent =
+            makeChannelPolyphonyText(
+                polyphony
+            );
+
+
+        document.getElementById(
+            "totalPeakPolyphony"
+        ).textContent =
+            polyphony.maximumTotal;
+
+
         document.getElementById(
             "duration"
         ).textContent =
@@ -2323,23 +2522,12 @@ async function loadMidiFile() {
             );
 
 
-        /*
-            If no PW request has been received,
-            default to all events which survive
-            the current type filter.
-        */
-
         requestedEventCount =
             null;
 
 
         refreshFilteredEvents();
 
-
-        /*
-            If PW sent its request before this MIDI
-            file was parsed, apply it now.
-        */
 
         if (
             pendingEventRequest !==
@@ -2565,17 +2753,6 @@ function getCurrentFieldInfo() {
         fieldName:
             fieldName,
 
-        /*
-            IMPORTANT:
-
-            Use currentEventIndex, NOT event.index.
-
-            event.index refers to the original full parsed
-            stream and can contain gaps after filtering.
-
-            MIDI Flash always receives contiguous indices.
-        */
-
         index:
             currentEventIndex,
 
@@ -2740,10 +2917,6 @@ PatchWorld.onWifiJolt =
     ) {
 
 
-        // ---------------------------------------------------------
-        // MIDI FLASH COMMUNICATION CHANNEL
-        // ---------------------------------------------------------
-
         if (
             channel ===
             CHANNELS.comChannel
@@ -2798,10 +2971,6 @@ PatchWorld.onWifiJolt =
         }
 
 
-        // ---------------------------------------------------------
-        // ABORT
-        // ---------------------------------------------------------
-
         if (
             channel ===
             CHANNELS.abortImport
@@ -2817,10 +2986,6 @@ PatchWorld.onWifiJolt =
             return;
         }
 
-
-        // ---------------------------------------------------------
-        // REQUESTED EVENT COUNT
-        // ---------------------------------------------------------
 
         if (
             channel ===
@@ -2887,10 +3052,6 @@ PatchWorld.onWifiJolt =
         }
 
 
-        // ---------------------------------------------------------
-        // ACK
-        // ---------------------------------------------------------
-
         if (
             channel ===
             CHANNELS.ack
@@ -2930,10 +3091,6 @@ PatchWorld.onWifiJolt =
             return;
         }
 
-
-        // ---------------------------------------------------------
-        // NAK
-        // ---------------------------------------------------------
 
         if (
             channel ===
@@ -3232,11 +3389,6 @@ async function completeImport() {
 
 
     try {
-
-        /*
-            Store exactly the number of events actually
-            written after filtering and range limiting.
-        */
 
         await PatchWorld.sendWirelessJolt(
             CHANNELS.eventCount,
