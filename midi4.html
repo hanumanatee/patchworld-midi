@@ -92,7 +92,7 @@
 
 <body>
 
-<div id="revision">MIDI4 REV 1</div>
+<div id="revision">MIDI4 REV 2</div>
 
 <h1>Patchworld Direct MIDI Importer</h1>
 
@@ -873,14 +873,12 @@ function convertMidi(midi) {
                 track.channel;
 
 
-            /*
-                If this track contains any channel-oriented
-                musical data, regard its channel as detected.
-            */
+            // =====================================================
+            // NOTES
+            // =====================================================
 
             if (
-                track.notes.length > 0 ||
-                track.pitchBends.length > 0
+                track.notes.length > 0
             ) {
 
                 channelsFound.add(
@@ -888,10 +886,6 @@ function convertMidi(midi) {
                 );
             }
 
-
-            // =====================================================
-            // NOTES
-            // =====================================================
 
             track.notes.forEach(
                 function(note) {
@@ -908,8 +902,8 @@ function convertMidi(midi) {
                     // -------------------------------------------------
                     // TYPE 0 = NOTE ON
                     //
-                    // Data 1 = MIDI note number
-                    // Data 2 = velocity
+                    // Data1 = note
+                    // Data2 = attack velocity
                     // -------------------------------------------------
 
                     events.push({
@@ -943,8 +937,8 @@ function convertMidi(midi) {
                     // -------------------------------------------------
                     // TYPE 1 = NOTE OFF
                     //
-                    // Data 1 = MIDI note number
-                    // Data 2 = release velocity
+                    // Data1 = note
+                    // Data2 = release velocity
                     // -------------------------------------------------
 
                     events.push({
@@ -991,12 +985,9 @@ function convertMidi(midi) {
             // =====================================================
             // CONTROL CHANGE
             //
-            // ToneJS stores these in track.controlChanges,
-            // indexed by controller number.
-            //
-            // TYPE 2 = CONTROL CHANGE
-            // Data 1 = controller number
-            // Data 2 = controller value 0-127
+            // TYPE 2
+            // Data1 = controller number
+            // Data2 = controller value 0-127
             // =====================================================
 
             for (
@@ -1071,36 +1062,36 @@ function convertMidi(midi) {
             // =====================================================
             // PROGRAM CHANGE
             //
-            // TYPE 3 is reserved.
+            // TYPE 3 RESERVED.
             //
-            // @tonejs/midi represents the resulting instrument
-            // on the Track, but does not expose timestamped
-            // Program Change events through track.programChanges.
-            //
-            // Therefore no type-3 events are synthesized here.
+            // No timestamped type-3 events are currently generated
+            // from the ToneJS high-level Track representation.
             // =====================================================
 
 
             // =====================================================
             // PITCH BEND
             //
-            // TYPE 4 = PITCH BEND
+            // TYPE 4
             //
-            // Data 1 = ToneJS PitchBend.value
-            // Data 2 = 0
+            // Data1 = ToneJS pitch bend value
+            // Data2 = 0
             //
-            // Keep ToneJS's parsed bend value intact for now.
-            // We can choose a PW-side pitch-bend scaling convention
-            // when the event handler is implemented.
+            // Keep the parsed bend value unscaled for now.
             // =====================================================
+
+            if (
+                track.pitchBends.length > 0
+            ) {
+
+                channelsFound.add(
+                    channel
+                );
+            }
+
 
             track.pitchBends.forEach(
                 function(bend) {
-
-                    channelsFound.add(
-                        channel
-                    );
-
 
                     events.push({
 
@@ -1137,7 +1128,7 @@ function convertMidi(midi) {
 
 
     // =============================================================
-    // MERGE ALL EVENTS CHRONOLOGICALLY
+    // MERGE ALL EVENT TYPES CHRONOLOGICALLY
     // =============================================================
 
     events.sort(
@@ -1153,10 +1144,6 @@ function convertMidi(midi) {
                 );
             }
 
-
-            /*
-                Where possible, retain source tick ordering.
-            */
 
             if (
                 Number.isFinite(
@@ -1177,11 +1164,10 @@ function convertMidi(midi) {
 
 
             /*
-                At an identical timestamp/tick, keep Note Off
-                ahead of Note On.
+                Deterministic ordering for events sharing
+                an identical timestamp/tick.
 
-                Other event categories retain deterministic
-                ordering around those note events.
+                Note Off is kept ahead of Note On.
             */
 
             const priority = {
@@ -1248,7 +1234,7 @@ function convertMidi(midi) {
 
 
     // =============================================================
-    // ASSIGN MIDI FLASH EVENT INDICES
+    // ASSIGN MIDI FLASH INDICES
     // =============================================================
 
     events.forEach(
@@ -1811,7 +1797,7 @@ async function loadMidiFile() {
 
 
         setStatus(
-            "Binary MIDI parsed successfully."
+            "MIDI parsed successfully."
         );
 
     }
@@ -2032,7 +2018,7 @@ function getCurrentFieldInfo() {
 
 
 // =============================================================
-// SEND ONE ARRAY WRITE
+// SEND ONE MIDI FLASH ARRAY WRITE
 // =============================================================
 
 async function sendCurrentWrite() {
@@ -2065,6 +2051,15 @@ async function sendCurrentWrite() {
         "currentWrite"
     ).textContent =
 
+        "event " +
+        currentEventIndex +
+
+        " / " +
+        EVENT_TYPE_NAMES[
+            info.event.type
+        ] +
+
+        " / " +
         info.fieldName +
 
         "[" +
@@ -2154,7 +2149,7 @@ async function sendCurrentWrite() {
 
 
 // =============================================================
-// RECEIVE ACK / NAK / REQUEST / ABORT / COMMUNICATION CHANNEL
+// RECEIVE ACK / NAK / CONTROL SIGNALS
 // =============================================================
 
 PatchWorld.onWifiJolt =
@@ -2382,6 +2377,19 @@ async function advanceToNextWrite() {
 
     currentFieldIndex++;
 
+
+    /*
+        All event types use the same five MIDI Flash fields:
+
+        Time
+        Event Type
+        Data1
+        Data2
+        Channel
+
+        Therefore types 0, 1, 2 and 4 all pass through
+        exactly the same verified write sequence.
+    */
 
     if (
         currentFieldIndex >=
@@ -2668,11 +2676,9 @@ async function completeImport() {
 
         " verified writes. " +
 
-        "Event count sent: " +
-
         importEventLimit +
 
-        " to MIDI Flash channel " +
+        " events stored on MIDI Flash channel " +
 
         midiComChannel
     );
