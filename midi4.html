@@ -62,6 +62,7 @@
         #filteredEventTypeCounts,
         #requestedEventTypeCounts,
         #expectedSounds,
+        #drumSounds,
         #channelPolyphony,
         #totalPeakPolyphony {
             font-family: monospace;
@@ -119,7 +120,7 @@
 
 <body>
 
-<div id="revision">MIDI4 REV 6</div>
+<div id="revision">MIDI4 REV 7</div>
 
 <h1>Patchworld Direct MIDI Importer</h1>
 
@@ -214,15 +215,6 @@
             <input
                 type="checkbox"
                 class="eventTypeCheckbox"
-                data-event-type="3"
-            >
-            Program Change (3)
-        </label>
-
-        <label class="event-filter-row">
-            <input
-                type="checkbox"
-                class="eventTypeCheckbox"
                 data-event-type="4"
             >
             Pitch Bend (4)
@@ -310,6 +302,11 @@
     <div>
         <span class="label">Expected sounds by channel:</span>
         <span id="expectedSounds">-</span>
+    </div>
+
+    <div>
+        <span class="label">Used standard MIDI drum sounds:</span>
+        <span id="drumSounds">-</span>
     </div>
 
     <div>
@@ -707,6 +704,10 @@ function clearMidiDisplay() {
 
     document.getElementById(
         "expectedSounds"
+    ).textContent = "-";
+
+    document.getElementById(
+        "drumSounds"
     ).textContent = "-";
 
     document.getElementById(
@@ -2105,6 +2106,218 @@ function makeExpectedSoundsByChannel(
 
 
 // =============================================================
+// USED STANDARD MIDI DRUM SOUNDS
+// =============================================================
+
+const GM_DRUM_NAMES = {
+
+    35: "Acoustic Bass Drum",
+    36: "Bass Drum 1",
+    37: "Side Stick",
+    38: "Acoustic Snare",
+    39: "Hand Clap",
+    40: "Electric Snare",
+    41: "Low Floor Tom",
+    42: "Closed Hi-Hat",
+    43: "High Floor Tom",
+    44: "Pedal Hi-Hat",
+    45: "Low Tom",
+    46: "Open Hi-Hat",
+    47: "Low-Mid Tom",
+    48: "Hi-Mid Tom",
+    49: "Crash Cymbal 1",
+    50: "High Tom",
+    51: "Ride Cymbal 1",
+    52: "Chinese Cymbal",
+    53: "Ride Bell",
+    54: "Tambourine",
+    55: "Splash Cymbal",
+    56: "Cowbell",
+    57: "Crash Cymbal 2",
+    58: "Vibraslap",
+    59: "Ride Cymbal 2",
+    60: "Hi Bongo",
+    61: "Low Bongo",
+    62: "Mute Hi Conga",
+    63: "Open Hi Conga",
+    64: "Low Conga",
+    65: "High Timbale",
+    66: "Low Timbale",
+    67: "High Agogo",
+    68: "Low Agogo",
+    69: "Cabasa",
+    70: "Maracas",
+    71: "Short Whistle",
+    72: "Long Whistle",
+    73: "Short Guiro",
+    74: "Long Guiro",
+    75: "Claves",
+    76: "Hi Wood Block",
+    77: "Low Wood Block",
+    78: "Mute Cuica",
+    79: "Open Cuica",
+    80: "Mute Triangle",
+    81: "Open Triangle"
+};
+
+
+function makeUsedDrumSounds(
+    midi
+) {
+
+    const usedByChannel =
+        new Map();
+
+
+    midi.tracks.forEach(
+        function(track) {
+
+            const isPercussionTrack =
+                (
+                    track.channel === 9 ||
+                    (
+                        track.instrument &&
+                        track.instrument.percussion === true
+                    )
+                );
+
+
+            if (
+                !isPercussionTrack
+            ) {
+
+                return;
+            }
+
+
+            if (
+                !usedByChannel.has(
+                    track.channel
+                )
+            ) {
+
+                usedByChannel.set(
+                    track.channel,
+                    new Set()
+                );
+            }
+
+
+            const notes =
+                usedByChannel.get(
+                    track.channel
+                );
+
+
+            track.notes.forEach(
+                function(note) {
+
+                    if (
+                        Object.prototype
+                            .hasOwnProperty.call(
+                                GM_DRUM_NAMES,
+                                note.midi
+                            )
+                    ) {
+
+                        notes.add(
+                            note.midi
+                        );
+                    }
+                }
+            );
+        }
+    );
+
+
+    const channelEntries =
+        Array.from(
+            usedByChannel.entries()
+        )
+        .map(
+            function(entry) {
+
+                return [
+                    entry[0],
+                    Array.from(
+                        entry[1]
+                    )
+                    .sort(
+                        function(a, b) {
+
+                            return a - b;
+                        }
+                    )
+                ];
+            }
+        )
+        .filter(
+            function(entry) {
+
+                return (
+                    entry[1].length > 0
+                );
+            }
+        )
+        .sort(
+            function(a, b) {
+
+                return a[0] - b[0];
+            }
+        );
+
+
+    if (
+        channelEntries.length === 0
+    ) {
+
+        return "-";
+    }
+
+
+    return channelEntries
+        .map(
+            function(entry) {
+
+                const channel =
+                    entry[0];
+
+                const notes =
+                    entry[1];
+
+
+                const descriptions =
+                    notes.map(
+                        function(noteNumber) {
+
+                            return (
+                                noteNumber +
+                                " — " +
+                                GM_DRUM_NAMES[
+                                    noteNumber
+                                ]
+                            );
+                        }
+                    );
+
+
+                return (
+                    "Channel " +
+                    (channel + 1) +
+                    ": " +
+                    descriptions.join(
+                        "   |   "
+                    )
+                );
+            }
+        )
+        .join(
+            "      ||      "
+        );
+}
+
+
+// =============================================================
 // TRACK INFORMATION
 // =============================================================
 
@@ -2479,6 +2692,14 @@ async function loadMidiFile() {
             "expectedSounds"
         ).textContent =
             makeExpectedSoundsByChannel(
+                midi
+            );
+
+
+        document.getElementById(
+            "drumSounds"
+        ).textContent =
+            makeUsedDrumSounds(
                 midi
             );
 
