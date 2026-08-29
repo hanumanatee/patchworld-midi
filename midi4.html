@@ -120,7 +120,7 @@
 
 <body>
 
-<div id="revision">MIDI4 REV 7</div>
+<div id="revision">MIDI4 REV 8</div>
 
 <h1>Patchworld Direct MIDI Importer</h1>
 
@@ -141,7 +141,7 @@
 
     <div>
         <span class="label">MIDI Flash channel:</span>
-        <span id="comChannel">0</span>
+        <span id="comChannel">Waiting...</span>
     </div>
 
 </div>
@@ -552,7 +552,7 @@ let importEventLimit = 0;
 
 let pendingEventRequest = null;
 
-let midiComChannel = 0;
+let midiComChannel = null;
 
 
 // =============================================================
@@ -618,6 +618,10 @@ function updateImportButton() {
         importEventLimit > 0 &&
         bridgeReady &&
         wirelessReady &&
+        Number.isInteger(
+            midiComChannel
+        ) &&
+        midiComChannel >= 1 &&
         !importing
     );
 }
@@ -3004,6 +3008,21 @@ function getCurrentFieldInfo() {
 async function sendCurrentWrite() {
 
     if (
+        !Number.isInteger(
+            midiComChannel
+        ) ||
+        midiComChannel < 1
+    ) {
+
+        stopImport(
+            "Import stopped: no valid MIDI Flash communication channel is selected."
+        );
+
+        return;
+    }
+
+
+    if (
         !importing ||
         abortRequested
     ) {
@@ -3172,8 +3191,26 @@ PatchWorld.onWifiJolt =
                 !Number.isFinite(
                     requestedChannel
                 ) ||
-                requestedChannel < 0
+                requestedChannel < 1
             ) {
+
+                midiComChannel =
+                    null;
+
+
+                document.getElementById(
+                    "comChannel"
+                ).textContent =
+                    "Waiting...";
+
+
+                setStatus(
+                    "Ignoring invalid MIDI Flash communication channel. Waiting for channel 1 or higher."
+                );
+
+
+                updateImportButton();
+
 
                 return;
             }
@@ -3193,6 +3230,9 @@ PatchWorld.onWifiJolt =
                 "MIDI Flash communication channel set to " +
                 midiComChannel
             );
+
+
+            updateImportButton();
 
 
             return;
@@ -3494,7 +3534,11 @@ function startImport() {
         filteredEvents.length === 0 ||
         !bridgeReady ||
         !wirelessReady ||
-        importEventLimit === 0
+        importEventLimit === 0 ||
+        !Number.isInteger(
+            midiComChannel
+        ) ||
+        midiComChannel < 1
     ) {
 
         return;
@@ -3606,6 +3650,21 @@ async function completeImport() {
     clearTimeout(
         responseTimer
     );
+
+
+    if (
+        !Number.isInteger(
+            midiComChannel
+        ) ||
+        midiComChannel < 1
+    ) {
+
+        stopImport(
+            "Import stopped: MIDI Flash communication channel became invalid before event count was sent."
+        );
+
+        return;
+    }
 
 
     importing =
