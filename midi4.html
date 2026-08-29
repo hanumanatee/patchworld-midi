@@ -478,6 +478,9 @@ const CHANNELS = {
     abortImport:
         "midi_abort_import",
 
+    resumeImport:
+        "midi_resume_import",
+
     importProgress:
         "midi_import_progress",
 
@@ -599,7 +602,6 @@ function resetImportStats() {
     nakCount = 0;
     retryCount = 0;
     retryForCurrentWrite = 0;
-    pausedForNoResponse = false;
 
     document.getElementById(
         "currentWrite"
@@ -2865,6 +2867,11 @@ async function subscribeToResponses() {
 
 
         await PatchWorld.subscribeWifi(
+            CHANNELS.resumeImport
+        );
+
+
+        await PatchWorld.subscribeWifi(
             CHANNELS.comChannel
         );
 
@@ -2876,7 +2883,7 @@ async function subscribeToResponses() {
         document.getElementById(
             "wirelessStatus"
         ).textContent =
-            "ACK/NAK/request/abort/channel subscribed";
+            "ACK/NAK/request/abort/resume/channel subscribed";
 
 
         updateImportButton();
@@ -2951,7 +2958,7 @@ PatchWorld.onDisconnected =
 
         if (importing) {
 
-            stopImport(
+            pauseImportForNoResponse(
                 "Bridge disconnected during import."
             );
         }
@@ -3004,6 +3011,110 @@ function getCurrentFieldInfo() {
 
 
 // =============================================================
+// PAUSE / RESUME ON LOST MIDI FLASH RESPONSE
+// =============================================================
+
+function pauseImportForNoResponse(
+    reason
+) {
+
+    if (
+        !importing
+    ) {
+
+        return;
+    }
+
+
+    clearTimeout(
+        responseTimer
+    );
+
+
+    waitingForResponse =
+        false;
+
+    pausedForNoResponse =
+        true;
+
+
+    const info =
+        getCurrentFieldInfo();
+
+
+    setStatus(
+        "MIDI Flash not responding — import paused at event " +
+        currentEventIndex +
+        ", " +
+        info.fieldName +
+        "[" +
+        info.index +
+        "]. " +
+        reason +
+        " Send midi_resume_import from Patchworld to retry this exact write."
+    );
+}
+
+
+function resumePausedImport() {
+
+    if (
+        !importing ||
+        !pausedForNoResponse
+    ) {
+
+        return;
+    }
+
+
+    if (
+        !bridgeReady ||
+        !wirelessReady
+    ) {
+
+        setStatus(
+            "Resume requested, but Patchworld wireless is not ready yet. Import remains paused."
+        );
+
+        return;
+    }
+
+
+    pausedForNoResponse =
+        false;
+
+    waitingForResponse =
+        false;
+
+
+    clearTimeout(
+        responseTimer
+    );
+
+
+    const info =
+        getCurrentFieldInfo();
+
+
+    setStatus(
+        "Resume requested — resending event " +
+        currentEventIndex +
+        ", " +
+        info.fieldName +
+        "[" +
+        info.index +
+        "]."
+    );
+
+
+    setTimeout(
+        sendCurrentWrite,
+        0
+    );
+}
+
+
+// =============================================================
 // SEND ONE MIDI FLASH ARRAY WRITE
 // =============================================================
 
@@ -3026,7 +3137,8 @@ async function sendCurrentWrite() {
 
     if (
         !importing ||
-        abortRequested
+        abortRequested ||
+        pausedForNoResponse
     ) {
 
         return;
@@ -3108,27 +3220,10 @@ async function sendCurrentWrite() {
                 }
 
 
-                pausedForNoResponse =
-                    true;
-
-
-                clearTimeout(
-                    responseTimer
-                );
-
-
-                const info =
-                    getCurrentFieldInfo();
-
-
-                setStatus(
-                    "MIDI Flash not responding — import paused at event " +
-                    currentEventIndex +
-                    ", " +
-                    info.fieldName +
-                    "[" +
-                    info.index +
-                    "]. Waiting for Patchworld to resume..."
+                pauseImportForNoResponse(
+                    "ACK timeout after " +
+                    ACK_TIMEOUT_MS +
+                    " ms."
                 );
 
             },
@@ -3165,7 +3260,7 @@ async function sendCurrentWrite() {
             false;
 
 
-        retryCurrentWrite(
+        pauseImportForNoResponse(
             "Send error: " +
             error
         );
@@ -3269,6 +3364,23 @@ PatchWorld.onWifiJolt =
                 stopImport(
                     "Import aborted from Patchworld."
                 );
+            }
+
+            return;
+        }
+
+
+        if (
+            channel ===
+            CHANNELS.resumeImport
+        ) {
+
+            if (
+                importing &&
+                pausedForNoResponse
+            ) {
+
+                resumePausedImport();
             }
 
             return;
@@ -3481,103 +3593,6 @@ async function advanceToNextWrite() {
 
 
 // =============================================================
-// RESUME AFTER NO-RESPONSE PAUSE
-// =============================================================
-
-function resumePausedImport(
-    reason
-) {
-
-    if (
-        !importing ||
-        !pausedForNoResponse
-    ) {
-
-        return;
-    }
-
-
-    pausedForNoResponse =
-        false;
-
-    waitingForResponse =
-        false;
-
-
-    clearTimeout(
-        responseTimer
-    );
-
-
-    const info =
-        getCurrentFieldInfo();
-
-
-    setStatus(
-        "Patchworld resumed — resending event " +
-        currentEventIndex +
-        ", " +
-        info.fieldName +
-        "[" +
-        info.index +
-        "] (" +
-        reason +
-        ")."
-    );
-
-
-    setTimeout(
-        sendCurrentWrite,
-        0
-    );
-}
-
-
-// If the headset/browser is suspended during a long import, the current
-// event/field/index is preserved. When the page becomes active again,
-// resend that exact pending write. Repeating the same array index/value
-// is harmless; advancement still occurs only after ACK.
-
-document.addEventListener(
-    "visibilitychange",
-    function() {
-
-        if (
-            document.visibilityState ===
-            "visible"
-        ) {
-
-            resumePausedImport(
-                "page visible"
-            );
-        }
-    }
-);
-
-
-window.addEventListener(
-    "pageshow",
-    function() {
-
-        resumePausedImport(
-            "page shown"
-        );
-    }
-);
-
-
-window.addEventListener(
-    "focus",
-    function() {
-
-        resumePausedImport(
-            "page focused"
-        );
-    }
-);
-
-
-// =============================================================
 // RETRY
 // =============================================================
 
@@ -3673,10 +3688,6 @@ function startImport() {
 
 
     abortRequested =
-        false;
-
-
-    pausedForNoResponse =
         false;
 
 
