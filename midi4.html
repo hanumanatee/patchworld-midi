@@ -120,7 +120,7 @@
 
 <body>
 
-<div id="revision">MIDI4 REV 8</div>
+<div id="revision">MIDI4 REV 9</div>
 
 <h1>Patchworld Direct MIDI Importer</h1>
 
@@ -544,6 +544,7 @@ let retryCount = 0;
 let retryForCurrentWrite = 0;
 
 let waitingForResponse = false;
+let pausedForNoResponse = false;
 let responseTimer = null;
 
 let requestedEventCount = null;
@@ -598,6 +599,7 @@ function resetImportStats() {
     nakCount = 0;
     retryCount = 0;
     retryForCurrentWrite = 0;
+    pausedForNoResponse = false;
 
     document.getElementById(
         "currentWrite"
@@ -3083,6 +3085,9 @@ async function sendCurrentWrite() {
     waitingForResponse =
         true;
 
+    pausedForNoResponse =
+        false;
+
 
     clearTimeout(
         responseTimer
@@ -3103,12 +3108,27 @@ async function sendCurrentWrite() {
                 }
 
 
-                waitingForResponse =
-                    false;
+                pausedForNoResponse =
+                    true;
 
 
-                retryCurrentWrite(
-                    "ACK timeout"
+                clearTimeout(
+                    responseTimer
+                );
+
+
+                const info =
+                    getCurrentFieldInfo();
+
+
+                setStatus(
+                    "MIDI Flash not responding — import paused at event " +
+                    currentEventIndex +
+                    ", " +
+                    info.fieldName +
+                    "[" +
+                    info.index +
+                    "]. Waiting for Patchworld to resume..."
                 );
 
             },
@@ -3341,6 +3361,9 @@ PatchWorld.onWifiJolt =
             waitingForResponse =
                 false;
 
+            pausedForNoResponse =
+                false;
+
 
             ackCount++;
 
@@ -3379,6 +3402,9 @@ PatchWorld.onWifiJolt =
 
 
             waitingForResponse =
+                false;
+
+            pausedForNoResponse =
                 false;
 
 
@@ -3452,6 +3478,103 @@ async function advanceToNextWrite() {
 
     sendCurrentWrite();
 }
+
+
+// =============================================================
+// RESUME AFTER NO-RESPONSE PAUSE
+// =============================================================
+
+function resumePausedImport(
+    reason
+) {
+
+    if (
+        !importing ||
+        !pausedForNoResponse
+    ) {
+
+        return;
+    }
+
+
+    pausedForNoResponse =
+        false;
+
+    waitingForResponse =
+        false;
+
+
+    clearTimeout(
+        responseTimer
+    );
+
+
+    const info =
+        getCurrentFieldInfo();
+
+
+    setStatus(
+        "Patchworld resumed — resending event " +
+        currentEventIndex +
+        ", " +
+        info.fieldName +
+        "[" +
+        info.index +
+        "] (" +
+        reason +
+        ")."
+    );
+
+
+    setTimeout(
+        sendCurrentWrite,
+        0
+    );
+}
+
+
+// If the headset/browser is suspended during a long import, the current
+// event/field/index is preserved. When the page becomes active again,
+// resend that exact pending write. Repeating the same array index/value
+// is harmless; advancement still occurs only after ACK.
+
+document.addEventListener(
+    "visibilitychange",
+    function() {
+
+        if (
+            document.visibilityState ===
+            "visible"
+        ) {
+
+            resumePausedImport(
+                "page visible"
+            );
+        }
+    }
+);
+
+
+window.addEventListener(
+    "pageshow",
+    function() {
+
+        resumePausedImport(
+            "page shown"
+        );
+    }
+);
+
+
+window.addEventListener(
+    "focus",
+    function() {
+
+        resumePausedImport(
+            "page focused"
+        );
+    }
+);
 
 
 // =============================================================
@@ -3553,6 +3676,10 @@ function startImport() {
         false;
 
 
+    pausedForNoResponse =
+        false;
+
+
     currentEventIndex =
         0;
 
@@ -3582,6 +3709,9 @@ function startImport() {
 
 
     waitingForResponse =
+        false;
+
+    pausedForNoResponse =
         false;
 
 
@@ -3778,6 +3908,4064 @@ function stopImport(reason) {
 
 
     waitingForResponse =
+        false;
+
+    pausedForNoResponse =
+        false;
+
+
+    setStatus(
+        reason
+    );
+
+
+    restoreControls();
+}
+
+
+// =============================================================
+// UI EVENTS
+// =============================================================
+
+document.getElementById(
+    "fileSelect"
+).addEventListener(
+
+    "change",
+
+    function() {
+
+        clearMidiDisplay();
+
+        resetImportStats();
+
+
+        document.getElementById(
+            "selectedFile"
+        ).textContent =
+            this.value;
+
+
+        setStatus(
+            "Selected file has not been parsed yet."
+        );
+    }
+);
+
+
+document.getElementById(
+    "loadButton"
+).addEventListener(
+    "click",
+    loadMidiFile
+);
+
+
+document.getElementById(
+    "importButton"
+).addEventListener(
+    "click",
+    startImport
+);
+
+
+document.getElementById(
+    "abortButton"
+).addEventListener(
+
+    "click",
+
+    function() {
+
+        stopImport(
+            "Import aborted by user."
+        );
+    }
+);
+
+
+// =============================================================
+// EVENT TYPE CHECKBOX EVENTS
+// =============================================================
+
+document
+    .querySelectorAll(
+        ".eventTypeCheckbox"
+    )
+    .forEach(
+        function(box) {
+
+            box.addEventListener(
+                "change",
+                function() {
+
+                    updateSelectAllState();
+
+                    refreshFilteredEvents();
+                }
+            );
+        }
+    );
+
+
+document.getElementById(
+    "selectAllEventTypes"
+).addEventListener(
+
+    "change",
+
+    function() {
+
+        const checked =
+            this.checked;
+
+
+        document
+            .querySelectorAll(
+                ".eventTypeCheckbox"
+            )
+            .forEach(
+                function(box) {
+
+                    box.checked =
+                        checked;
+                }
+            );
+
+
+        this.indeterminate =
+            false;
+
+
+        refreshFilteredEvents();
+    }
+);
+
+
+// =============================================================
+// INITIALIZE
+// =============================================================
+
+updateSelectAllState();
+
+loadMidiDirectory();
+
+</script>
+
+</body>
+</html><!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Patchworld MIDI Importer</title>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #181818;
+            color: #eeeeee;
+            margin: 30px;
+        }
+
+        h1 {
+            margin-bottom: 5px;
+        }
+
+        #revision {
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        #author {
+            font-size: 14px;
+            color: #aaaaaa;
+            margin-top: -2px;
+            margin-bottom: 14px;
+        }
+
+        .section {
+            margin-top: 18px;
+            padding: 14px;
+            background: #282828;
+            border-radius: 8px;
+        }
+
+        .label {
+            color: #aaaaaa;
+        }
+
+        button,
+        select {
+            font-size: 18px;
+            padding: 10px 18px;
+            margin-top: 10px;
+            margin-right: 8px;
+        }
+
+        select {
+            min-width: 320px;
+        }
+
+        #eventLimit,
+        #comChannel {
+            font-family: monospace;
+            font-size: 22px;
+            font-weight: bold;
+        }
+
+        #eventTypeCounts,
+        #filteredEventTypeCounts,
+        #requestedEventTypeCounts,
+        #expectedSounds,
+        #drumSounds,
+        #channelPolyphony,
+        #totalPeakPolyphony {
+            font-family: monospace;
+        }
+
+        .event-filter-list {
+            margin-top: 10px;
+        }
+
+        .event-filter-row {
+            display: block;
+            margin: 7px 0;
+            font-size: 17px;
+        }
+
+        .event-filter-row input {
+            transform: scale(1.25);
+            margin-right: 9px;
+        }
+
+        .master-filter-row {
+            margin-top: 14px;
+            padding-top: 10px;
+            border-top: 1px solid #444444;
+            font-weight: bold;
+        }
+
+        pre {
+            background: #111111;
+            padding: 12px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        #status {
+            font-size: 18px;
+            margin-bottom: 8px;
+        }
+
+        .good {
+            color: #69d36f;
+        }
+
+        .bad {
+            color: #ff6b6b;
+        }
+
+        .value {
+            font-family: monospace;
+        }
+    </style>
+</head>
+
+<body>
+
+<div id="revision">MIDI4 REV 9</div>
+
+<h1>Patchworld Direct MIDI Importer</h1>
+
+<div id="author">Hanumanatee</div>
+
+
+<div class="section">
+
+    <div>
+        <span class="label">Bridge:</span>
+        <span id="bridgeStatus">Waiting...</span>
+    </div>
+
+    <div>
+        <span class="label">Wireless:</span>
+        <span id="wirelessStatus">Not subscribed</span>
+    </div>
+
+    <div>
+        <span class="label">MIDI Flash channel:</span>
+        <span id="comChannel">Waiting...</span>
+    </div>
+
+</div>
+
+
+<div class="section">
+
+    <div>
+        <span class="label">MIDI file:</span>
+    </div>
+
+    <select id="fileSelect" disabled>
+        <option>Loading MIDI directory...</option>
+    </select>
+
+    <br>
+
+    <button id="loadButton" disabled>
+        Load and Parse MIDI
+    </button>
+
+    <button id="importButton" disabled>
+        Start Import
+    </button>
+
+    <button id="abortButton" disabled>
+        Abort
+    </button>
+
+</div>
+
+
+<div class="section">
+
+    <div class="label">
+        Event types to import:
+    </div>
+
+    <div class="event-filter-list">
+
+        <label class="event-filter-row">
+            <input
+                type="checkbox"
+                class="eventTypeCheckbox"
+                data-event-type="0"
+                checked
+            >
+            Note On (0)
+        </label>
+
+        <label class="event-filter-row">
+            <input
+                type="checkbox"
+                class="eventTypeCheckbox"
+                data-event-type="1"
+                checked
+            >
+            Note Off (1)
+        </label>
+
+        <label class="event-filter-row">
+            <input
+                type="checkbox"
+                class="eventTypeCheckbox"
+                data-event-type="2"
+            >
+            Control Change (2)
+        </label>
+
+        <label class="event-filter-row">
+            <input
+                type="checkbox"
+                class="eventTypeCheckbox"
+                data-event-type="4"
+            >
+            Pitch Bend (4)
+        </label>
+
+        <label class="event-filter-row master-filter-row">
+            <input
+                type="checkbox"
+                id="selectAllEventTypes"
+            >
+            Select all
+        </label>
+
+    </div>
+
+</div>
+
+
+<div class="section">
+
+    <div id="status">
+        Waiting.
+    </div>
+
+    <div>
+        <span class="label">Selected file:</span>
+        <span id="selectedFile">-</span>
+    </div>
+
+    <div>
+        <span class="label">MIDI name:</span>
+        <span id="midiName">-</span>
+    </div>
+
+    <div>
+        <span class="label">PPQ:</span>
+        <span id="ppq">-</span>
+    </div>
+
+    <div>
+        <span class="label">Parsed tracks:</span>
+        <span id="trackCount">-</span>
+    </div>
+
+    <div>
+        <span class="label">Notes:</span>
+        <span id="noteCount">-</span>
+    </div>
+
+    <div>
+        <span class="label">Parsed events:</span>
+        <span id="eventCount">-</span>
+    </div>
+
+    <div>
+        <span class="label">Event types in full file:</span>
+        <span id="eventTypeCounts">-</span>
+    </div>
+
+    <div>
+        <span class="label">Events after type filtering:</span>
+        <span id="filteredEventCount">-</span>
+    </div>
+
+    <div>
+        <span class="label">Event types after filtering:</span>
+        <span id="filteredEventTypeCounts">-</span>
+    </div>
+
+    <div>
+        <span class="label">Events requested for import:</span>
+        <span id="eventLimit">-</span>
+    </div>
+
+    <div>
+        <span class="label">Event types in requested range:</span>
+        <span id="requestedEventTypeCounts">-</span>
+    </div>
+
+    <div>
+        <span class="label">Detected channels:</span>
+        <span id="channelCount">-</span>
+    </div>
+
+    <div>
+        <span class="label">Expected sounds by channel:</span>
+        <span id="expectedSounds">-</span>
+    </div>
+
+    <div>
+        <span class="label">Used standard MIDI drum sounds:</span>
+        <span id="drumSounds">-</span>
+    </div>
+
+    <div>
+        <span class="label">Maximum simultaneous voices by channel:</span>
+        <span id="channelPolyphony">-</span>
+    </div>
+
+    <div>
+        <span class="label">Total peak polyphony:</span>
+        <span id="totalPeakPolyphony">-</span>
+    </div>
+
+    <div>
+        <span class="label">Duration:</span>
+        <span id="duration">-</span>
+    </div>
+
+    <div>
+        <span class="label">Writes required:</span>
+        <span id="writesRequired">-</span>
+    </div>
+
+</div>
+
+
+<div class="section">
+
+    <div>
+        <span class="label">Current write:</span>
+        <span id="currentWrite" class="value">-</span>
+    </div>
+
+    <div>
+        <span class="label">Completed writes:</span>
+        <span id="completedWrites">0</span>
+    </div>
+
+    <div>
+        <span class="label">ACKs:</span>
+        <span id="ackCount" class="good">0</span>
+    </div>
+
+    <div>
+        <span class="label">NAKs:</span>
+        <span id="nakCount" class="bad">0</span>
+    </div>
+
+    <div>
+        <span class="label">Retries:</span>
+        <span id="retryCount">0</span>
+    </div>
+
+</div>
+
+
+<div class="section">
+
+    <div class="label">
+        Track information:
+    </div>
+
+    <pre id="trackInfo">No MIDI loaded yet.</pre>
+
+</div>
+
+
+<div class="section">
+
+    <div class="label">
+        First 20 parsed PW events:
+    </div>
+
+    <pre id="preview">No MIDI loaded yet.</pre>
+
+</div>
+
+
+<script src="https://unpkg.com/@tonejs/midi@2.0.28/build/Midi.js"></script>
+
+
+<script>
+    document.write(
+        '<script src="patchworld-bridge.js?t=' +
+        Date.now() +
+        '"><\/script>'
+    );
+</script>
+
+
+<script>
+
+// =============================================================
+// CONFIGURATION
+// =============================================================
+
+const GITHUB_OWNER =
+    "hanumanatee";
+
+const GITHUB_REPOSITORY =
+    "patchworld-midi";
+
+const GITHUB_BRANCH =
+    "main";
+
+const MIDI_FOLDER =
+    "midi";
+
+
+const GITHUB_API_URL =
+    "https://api.github.com/repos/" +
+    GITHUB_OWNER +
+    "/" +
+    GITHUB_REPOSITORY +
+    "/contents/" +
+    MIDI_FOLDER +
+    "?ref=" +
+    GITHUB_BRANCH;
+
+
+const MIDI_BASE_URL =
+    "https://" +
+    GITHUB_OWNER +
+    ".github.io/" +
+    GITHUB_REPOSITORY +
+    "/" +
+    MIDI_FOLDER +
+    "/";
+
+
+const CHANNELS = {
+
+    time: {
+        index: "midi_time_index",
+        value: "midi_time_value"
+    },
+
+    type: {
+        index: "midi_type_index",
+        value: "midi_type_value"
+    },
+
+    data1: {
+        index: "midi_data1_index",
+        value: "midi_data1_value"
+    },
+
+    data2: {
+        index: "midi_data2_index",
+        value: "midi_data2_value"
+    },
+
+    channel: {
+        index: "midi_channel_index",
+        value: "midi_channel_value"
+    },
+
+    ack:
+        "midi_ack",
+
+    nak:
+        "midi_nak",
+
+    eventCount:
+        "midi_event_count",
+
+    eventsRequested:
+        "midi_events_requested",
+
+    abortImport:
+        "midi_abort_import",
+
+    importProgress:
+        "midi_import_progress",
+
+    comChannel:
+        "midi_com_channel"
+};
+
+
+const FIELD_ORDER = [
+    "time",
+    "type",
+    "data1",
+    "data2",
+    "channel"
+];
+
+
+const EVENT_TYPES = {
+
+    NOTE_ON: 0,
+    NOTE_OFF: 1,
+    CONTROL_CHANGE: 2,
+    PROGRAM_CHANGE: 3,
+    PITCH_BEND: 4
+};
+
+
+const EVENT_TYPE_NAMES = {
+
+    0: "Note On",
+    1: "Note Off",
+    2: "Control Change",
+    3: "Program Change",
+    4: "Pitch Bend"
+};
+
+
+const MAX_RETRIES = 5;
+
+const ACK_TIMEOUT_MS = 2000;
+
+
+// =============================================================
+// STATE
+// =============================================================
+
+let parsedEvents = [];
+
+let filteredEvents = [];
+
+let bridgeReady = false;
+let wirelessReady = false;
+
+let importing = false;
+let abortRequested = false;
+
+let currentEventIndex = 0;
+let currentFieldIndex = 0;
+
+let completedWrites = 0;
+let ackCount = 0;
+let nakCount = 0;
+let retryCount = 0;
+let retryForCurrentWrite = 0;
+
+let waitingForResponse = false;
+let pausedForNoResponse = false;
+let responseTimer = null;
+
+let requestedEventCount = null;
+
+let importEventLimit = 0;
+
+let pendingEventRequest = null;
+
+let midiComChannel = null;
+
+
+// =============================================================
+// UI HELPERS
+// =============================================================
+
+function setStatus(text) {
+
+    document.getElementById(
+        "status"
+    ).textContent = text;
+}
+
+
+function updateCounters() {
+
+    document.getElementById(
+        "completedWrites"
+    ).textContent =
+        completedWrites;
+
+    document.getElementById(
+        "ackCount"
+    ).textContent =
+        ackCount;
+
+    document.getElementById(
+        "nakCount"
+    ).textContent =
+        nakCount;
+
+    document.getElementById(
+        "retryCount"
+    ).textContent =
+        retryCount;
+}
+
+
+function resetImportStats() {
+
+    completedWrites = 0;
+    ackCount = 0;
+    nakCount = 0;
+    retryCount = 0;
+    retryForCurrentWrite = 0;
+    pausedForNoResponse = false;
+
+    document.getElementById(
+        "currentWrite"
+    ).textContent =
+        "-";
+
+    updateCounters();
+}
+
+
+function updateImportButton() {
+
+    document.getElementById(
+        "importButton"
+    ).disabled = !(
+
+        filteredEvents.length > 0 &&
+        importEventLimit > 0 &&
+        bridgeReady &&
+        wirelessReady &&
+        Number.isInteger(
+            midiComChannel
+        ) &&
+        midiComChannel >= 1 &&
+        !importing
+    );
+}
+
+
+function setFilterControlsDisabled(
+    disabled
+) {
+
+    const boxes =
+        document.querySelectorAll(
+            ".eventTypeCheckbox"
+        );
+
+
+    boxes.forEach(
+        function(box) {
+
+            box.disabled =
+                disabled;
+        }
+    );
+
+
+    document.getElementById(
+        "selectAllEventTypes"
+    ).disabled =
+        disabled;
+}
+
+
+function clearMidiDisplay() {
+
+    parsedEvents = [];
+
+    filteredEvents = [];
+
+    requestedEventCount =
+        null;
+
+    importEventLimit =
+        0;
+
+
+    document.getElementById(
+        "midiName"
+    ).textContent = "-";
+
+    document.getElementById(
+        "ppq"
+    ).textContent = "-";
+
+    document.getElementById(
+        "trackCount"
+    ).textContent = "-";
+
+    document.getElementById(
+        "noteCount"
+    ).textContent = "-";
+
+    document.getElementById(
+        "eventCount"
+    ).textContent = "-";
+
+    document.getElementById(
+        "eventTypeCounts"
+    ).textContent = "-";
+
+    document.getElementById(
+        "filteredEventCount"
+    ).textContent = "-";
+
+    document.getElementById(
+        "filteredEventTypeCounts"
+    ).textContent = "-";
+
+    document.getElementById(
+        "requestedEventTypeCounts"
+    ).textContent = "-";
+
+    document.getElementById(
+        "channelCount"
+    ).textContent = "-";
+
+    document.getElementById(
+        "expectedSounds"
+    ).textContent = "-";
+
+    document.getElementById(
+        "drumSounds"
+    ).textContent = "-";
+
+    document.getElementById(
+        "channelPolyphony"
+    ).textContent = "-";
+
+    document.getElementById(
+        "totalPeakPolyphony"
+    ).textContent = "-";
+
+    document.getElementById(
+        "eventLimit"
+    ).textContent = "-";
+
+    document.getElementById(
+        "duration"
+    ).textContent = "-";
+
+    document.getElementById(
+        "writesRequired"
+    ).textContent = "-";
+
+    document.getElementById(
+        "trackInfo"
+    ).textContent =
+        "No MIDI loaded yet.";
+
+    document.getElementById(
+        "preview"
+    ).textContent =
+        "No MIDI loaded yet.";
+
+    updateImportButton();
+}
+
+
+// =============================================================
+// EVENT TYPE COUNTS
+// =============================================================
+
+function makeEventTypeCounts(events) {
+
+    if (
+        events.length === 0
+    ) {
+
+        return "None";
+    }
+
+
+    const counts =
+        new Map();
+
+
+    for (
+        const event
+        of events
+    ) {
+
+        counts.set(
+            event.type,
+            (
+                counts.get(
+                    event.type
+                ) || 0
+            ) + 1
+        );
+    }
+
+
+    return Array.from(
+        counts.entries()
+    )
+    .sort(
+        function(a, b) {
+
+            return a[0] - b[0];
+        }
+    )
+    .map(
+        function(entry) {
+
+            const type =
+                entry[0];
+
+            const count =
+                entry[1];
+
+
+            const name =
+                EVENT_TYPE_NAMES[type] ||
+                (
+                    "Type " +
+                    type
+                );
+
+
+            return (
+                name +
+                " (" +
+                type +
+                "): " +
+                count
+            );
+        }
+    )
+    .join(
+        "   |   "
+    );
+}
+
+
+// =============================================================
+// POLYPHONY ANALYSIS
+// =============================================================
+
+function analyzePolyphony(events) {
+
+    const currentByChannel =
+        new Map();
+
+    const maximumByChannel =
+        new Map();
+
+
+    let currentTotal =
+        0;
+
+    let maximumTotal =
+        0;
+
+
+    for (
+        const event
+        of events
+    ) {
+
+        /*
+            Only Note On / Note Off events affect
+            simultaneous voice count.
+        */
+
+        if (
+            event.type !==
+                EVENT_TYPES.NOTE_ON &&
+            event.type !==
+                EVENT_TYPES.NOTE_OFF
+        ) {
+
+            continue;
+        }
+
+
+        const channel =
+            event.channel;
+
+
+        if (
+            !currentByChannel.has(
+                channel
+            )
+        ) {
+
+            currentByChannel.set(
+                channel,
+                0
+            );
+        }
+
+
+        if (
+            !maximumByChannel.has(
+                channel
+            )
+        ) {
+
+            maximumByChannel.set(
+                channel,
+                0
+            );
+        }
+
+
+        let current =
+            currentByChannel.get(
+                channel
+            );
+
+
+        if (
+            event.type ===
+            EVENT_TYPES.NOTE_ON
+        ) {
+
+            current++;
+
+            currentTotal++;
+
+
+            currentByChannel.set(
+                channel,
+                current
+            );
+
+
+            if (
+                current >
+                maximumByChannel.get(
+                    channel
+                )
+            ) {
+
+                maximumByChannel.set(
+                    channel,
+                    current
+                );
+            }
+
+
+            if (
+                currentTotal >
+                maximumTotal
+            ) {
+
+                maximumTotal =
+                    currentTotal;
+            }
+
+        } else {
+
+            /*
+                Generated Note Off events should always
+                correspond to an earlier Note On.
+
+                Clamp at zero so malformed/unusual source
+                material cannot produce negative voice counts.
+            */
+
+            if (
+                current > 0
+            ) {
+
+                current--;
+
+                currentTotal =
+                    Math.max(
+                        0,
+                        currentTotal - 1
+                    );
+
+
+                currentByChannel.set(
+                    channel,
+                    current
+                );
+            }
+        }
+    }
+
+
+    return {
+
+        maximumByChannel:
+            maximumByChannel,
+
+        maximumTotal:
+            maximumTotal
+    };
+}
+
+
+function makeChannelPolyphonyText(
+    analysis
+) {
+
+    const entries =
+        Array.from(
+            analysis
+                .maximumByChannel
+                .entries()
+        )
+        .filter(
+            function(entry) {
+
+                return (
+                    entry[1] >
+                    0
+                );
+            }
+        )
+        .sort(
+            function(a, b) {
+
+                return (
+                    a[0] -
+                    b[0]
+                );
+            }
+        );
+
+
+    if (
+        entries.length === 0
+    ) {
+
+        return "-";
+    }
+
+
+    return entries
+        .map(
+            function(entry) {
+
+                return (
+                    "Channel " +
+                    (entry[0] + 1) +
+                    " — " +
+                    entry[1]
+                );
+            }
+        )
+        .join(
+            "   |   "
+        );
+}
+
+
+// =============================================================
+// EVENT FILTERING
+// =============================================================
+
+function getEnabledEventTypes() {
+
+    const enabled =
+        new Set();
+
+
+    const boxes =
+        document.querySelectorAll(
+            ".eventTypeCheckbox"
+        );
+
+
+    boxes.forEach(
+        function(box) {
+
+            if (
+                box.checked
+            ) {
+
+                enabled.add(
+                    Number(
+                        box.dataset.eventType
+                    )
+                );
+            }
+        }
+    );
+
+
+    return enabled;
+}
+
+
+function updateSelectAllState() {
+
+    const boxes =
+        Array.from(
+            document.querySelectorAll(
+                ".eventTypeCheckbox"
+            )
+        );
+
+
+    const selectAll =
+        document.getElementById(
+            "selectAllEventTypes"
+        );
+
+
+    const checkedCount =
+        boxes.filter(
+            box =>
+                box.checked
+        ).length;
+
+
+    selectAll.checked =
+        (
+            checkedCount ===
+            boxes.length
+        );
+
+
+    selectAll.indeterminate =
+        (
+            checkedCount > 0 &&
+            checkedCount <
+            boxes.length
+        );
+}
+
+
+function refreshFilteredEvents() {
+
+    if (
+        parsedEvents.length === 0
+    ) {
+
+        filteredEvents = [];
+
+        importEventLimit = 0;
+
+
+        document.getElementById(
+            "filteredEventCount"
+        ).textContent =
+            "-";
+
+
+        document.getElementById(
+            "filteredEventTypeCounts"
+        ).textContent =
+            "-";
+
+
+        document.getElementById(
+            "requestedEventTypeCounts"
+        ).textContent =
+            "-";
+
+
+        document.getElementById(
+            "eventLimit"
+        ).textContent =
+            "-";
+
+
+        updateWriteCount();
+
+        updateImportButton();
+
+        return;
+    }
+
+
+    const enabledTypes =
+        getEnabledEventTypes();
+
+
+    filteredEvents =
+        parsedEvents.filter(
+            function(event) {
+
+                return enabledTypes.has(
+                    event.type
+                );
+            }
+        );
+
+
+    document.getElementById(
+        "filteredEventCount"
+    ).textContent =
+        filteredEvents.length;
+
+
+    document.getElementById(
+        "filteredEventTypeCounts"
+    ).textContent =
+        makeEventTypeCounts(
+            filteredEvents
+        );
+
+
+    if (
+        filteredEvents.length === 0
+    ) {
+
+        importEventLimit =
+            0;
+
+    } else if (
+        requestedEventCount === null
+    ) {
+
+        importEventLimit =
+            filteredEvents.length;
+
+    } else {
+
+        importEventLimit =
+            Math.max(
+                1,
+                Math.min(
+                    requestedEventCount,
+                    filteredEvents.length
+                )
+            );
+    }
+
+
+    document.getElementById(
+        "eventLimit"
+    ).textContent =
+        importEventLimit;
+
+
+    updateRequestedEventTypeCounts();
+
+    updateWriteCount();
+
+    updateImportButton();
+}
+
+
+function updateRequestedEventTypeCounts() {
+
+    const output =
+        document.getElementById(
+            "requestedEventTypeCounts"
+        );
+
+
+    if (
+        filteredEvents.length === 0 ||
+        importEventLimit <= 0
+    ) {
+
+        output.textContent =
+            "None";
+
+        return;
+    }
+
+
+    const requestedEvents =
+        filteredEvents.slice(
+            0,
+            importEventLimit
+        );
+
+
+    output.textContent =
+        makeEventTypeCounts(
+            requestedEvents
+        );
+}
+
+
+// =============================================================
+// EVENT REQUEST LIMIT
+// =============================================================
+
+function setEventLimit(
+    requestedValue
+) {
+
+    let value =
+        Math.floor(
+            Number(
+                requestedValue
+            )
+        );
+
+
+    if (
+        !Number.isFinite(
+            value
+        )
+    ) {
+
+        return;
+    }
+
+
+    value =
+        Math.max(
+            1,
+            value
+        );
+
+
+    if (
+        parsedEvents.length === 0
+    ) {
+
+        pendingEventRequest =
+            value;
+
+        return;
+    }
+
+
+    requestedEventCount =
+        value;
+
+
+    refreshFilteredEvents();
+}
+
+
+function updateWriteCount() {
+
+    if (
+        importEventLimit <= 0
+    ) {
+
+        document.getElementById(
+            "writesRequired"
+        ).textContent =
+            "-";
+
+        return;
+    }
+
+
+    document.getElementById(
+        "writesRequired"
+    ).textContent =
+
+        importEventLimit *
+        FIELD_ORDER.length;
+}
+
+
+// =============================================================
+// MIDI VALUE HELPERS
+// =============================================================
+
+function midi7BitFromNormalized(value) {
+
+    return Math.max(
+        0,
+        Math.min(
+            127,
+            Math.round(
+                Number(value) *
+                127
+            )
+        )
+    );
+}
+
+
+// =============================================================
+// GITHUB MIDI DIRECTORY
+// =============================================================
+
+async function loadMidiDirectory() {
+
+    const select =
+        document.getElementById(
+            "fileSelect"
+        );
+
+    const loadButton =
+        document.getElementById(
+            "loadButton"
+        );
+
+
+    try {
+
+        setStatus(
+            "Reading MIDI directory..."
+        );
+
+
+        const response =
+            await fetch(
+
+                GITHUB_API_URL +
+                "&t=" +
+                Date.now(),
+
+                {
+                    cache: "no-store",
+
+                    headers: {
+                        "Accept":
+                            "application/vnd.github+json"
+                    }
+                }
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "GitHub API HTTP " +
+                response.status +
+                " " +
+                response.statusText
+            );
+        }
+
+
+        const entries =
+            await response.json();
+
+
+        if (
+            !Array.isArray(entries)
+        ) {
+
+            throw new Error(
+                "Unexpected GitHub directory response."
+            );
+        }
+
+
+        const files =
+            entries
+                .filter(
+                    entry =>
+                        entry.type === "file" &&
+                        typeof entry.name === "string" &&
+                        entry.name
+                            .toLowerCase()
+                            .endsWith(".mid")
+                )
+                .map(
+                    entry =>
+                        entry.name
+                )
+                .sort(
+                    function(a, b) {
+
+                        return a.localeCompare(
+                            b,
+                            undefined,
+                            {
+                                numeric: true,
+                                sensitivity: "base"
+                            }
+                        );
+                    }
+                );
+
+
+        select.innerHTML = "";
+
+
+        if (
+            files.length === 0
+        ) {
+
+            const option =
+                document.createElement(
+                    "option"
+                );
+
+            option.textContent =
+                "No .mid files found";
+
+            select.appendChild(
+                option
+            );
+
+
+            select.disabled =
+                true;
+
+            loadButton.disabled =
+                true;
+
+
+            setStatus(
+                "No .mid files found in the GitHub midi folder."
+            );
+
+
+            return;
+        }
+
+
+        for (
+            const filename
+            of files
+        ) {
+
+            const option =
+                document.createElement(
+                    "option"
+                );
+
+            option.value =
+                filename;
+
+            option.textContent =
+                filename;
+
+            select.appendChild(
+                option
+            );
+        }
+
+
+        select.disabled =
+            false;
+
+        loadButton.disabled =
+            false;
+
+
+        document.getElementById(
+            "selectedFile"
+        ).textContent =
+            select.value;
+
+
+        setStatus(
+            files.length +
+            " MIDI file" +
+            (
+                files.length === 1
+                ? ""
+                : "s"
+            ) +
+            " found."
+        );
+
+    }
+
+    catch (error) {
+
+        console.error(
+            error
+        );
+
+
+        select.innerHTML =
+            "<option>MIDI directory error</option>";
+
+
+        select.disabled =
+            true;
+
+        loadButton.disabled =
+            true;
+
+
+        setStatus(
+            "ERROR reading MIDI directory: " +
+            error.message
+        );
+    }
+}
+
+
+// =============================================================
+// DIRECT MIDI -> GENERIC PW EVENTS
+// =============================================================
+
+function convertMidi(midi) {
+
+    const events = [];
+
+    const channelsFound =
+        new Set();
+
+    let totalNotes = 0;
+
+
+    midi.tracks.forEach(
+        function(
+            track,
+            trackIndex
+        ) {
+
+            const channel =
+                track.channel;
+
+
+            if (
+                track.notes.length > 0
+            ) {
+
+                channelsFound.add(
+                    channel
+                );
+            }
+
+
+            // =====================================================
+            // NOTES
+            // =====================================================
+
+            track.notes.forEach(
+                function(note) {
+
+                    totalNotes++;
+
+
+                    const velocity =
+                        midi7BitFromNormalized(
+                            note.velocity
+                        );
+
+
+                    events.push({
+
+                        time:
+                            note.time,
+
+                        type:
+                            EVENT_TYPES.NOTE_ON,
+
+                        data1:
+                            note.midi,
+
+                        data2:
+                            velocity,
+
+                        channel:
+                            channel,
+
+                        sourceTrack:
+                            trackIndex,
+
+                        sourceTicks:
+                            note.ticks,
+
+                        sourceType:
+                            "note_on"
+                    });
+
+
+                    events.push({
+
+                        time:
+                            note.time +
+                            note.duration,
+
+                        type:
+                            EVENT_TYPES.NOTE_OFF,
+
+                        data1:
+                            note.midi,
+
+                        data2:
+                            (
+                                Number.isFinite(
+                                    note.noteOffVelocity
+                                )
+                                ? midi7BitFromNormalized(
+                                    note.noteOffVelocity
+                                )
+                                : 0
+                            ),
+
+                        channel:
+                            channel,
+
+                        sourceTrack:
+                            trackIndex,
+
+                        sourceTicks:
+                            note.ticks +
+                            note.durationTicks,
+
+                        sourceType:
+                            "note_off"
+                    });
+
+                }
+            );
+
+
+            // =====================================================
+            // CONTROL CHANGE
+            // =====================================================
+
+            for (
+                let controllerNumber = 0;
+                controllerNumber < 128;
+                controllerNumber++
+            ) {
+
+                const changes =
+                    track.controlChanges[
+                        controllerNumber
+                    ];
+
+
+                if (
+                    !Array.isArray(
+                        changes
+                    )
+                ) {
+
+                    continue;
+                }
+
+
+                if (
+                    changes.length > 0
+                ) {
+
+                    channelsFound.add(
+                        channel
+                    );
+                }
+
+
+                changes.forEach(
+                    function(cc) {
+
+                        events.push({
+
+                            time:
+                                cc.time,
+
+                            type:
+                                EVENT_TYPES.CONTROL_CHANGE,
+
+                            data1:
+                                controllerNumber,
+
+                            data2:
+                                midi7BitFromNormalized(
+                                    cc.value
+                                ),
+
+                            channel:
+                                channel,
+
+                            sourceTrack:
+                                trackIndex,
+
+                            sourceTicks:
+                                cc.ticks,
+
+                            sourceType:
+                                "control_change"
+                        });
+
+                    }
+                );
+            }
+
+
+            // =====================================================
+            // PROGRAM CHANGE
+            //
+            // TYPE 3 RESERVED.
+            // =====================================================
+
+
+            // =====================================================
+            // PITCH BEND
+            // =====================================================
+
+            if (
+                track.pitchBends.length > 0
+            ) {
+
+                channelsFound.add(
+                    channel
+                );
+            }
+
+
+            track.pitchBends.forEach(
+                function(bend) {
+
+                    events.push({
+
+                        time:
+                            bend.time,
+
+                        type:
+                            EVENT_TYPES.PITCH_BEND,
+
+                        data1:
+                            bend.value,
+
+                        data2:
+                            0,
+
+                        channel:
+                            channel,
+
+                        sourceTrack:
+                            trackIndex,
+
+                        sourceTicks:
+                            bend.ticks,
+
+                        sourceType:
+                            "pitch_bend"
+                    });
+
+                }
+            );
+
+        }
+    );
+
+
+    // =============================================================
+    // SORT ALL EVENTS CHRONOLOGICALLY
+    // =============================================================
+
+    events.sort(
+        function(a, b) {
+
+            if (
+                a.time !== b.time
+            ) {
+
+                return (
+                    a.time -
+                    b.time
+                );
+            }
+
+
+            if (
+                Number.isFinite(
+                    a.sourceTicks
+                ) &&
+                Number.isFinite(
+                    b.sourceTicks
+                ) &&
+                a.sourceTicks !==
+                b.sourceTicks
+            ) {
+
+                return (
+                    a.sourceTicks -
+                    b.sourceTicks
+                );
+            }
+
+
+            const priority = {
+
+                1: 0,
+                2: 1,
+                3: 2,
+                4: 3,
+                0: 4
+            };
+
+
+            const priorityA =
+                priority[a.type] ??
+                100;
+
+            const priorityB =
+                priority[b.type] ??
+                100;
+
+
+            if (
+                priorityA !==
+                priorityB
+            ) {
+
+                return (
+                    priorityA -
+                    priorityB
+                );
+            }
+
+
+            if (
+                a.channel !==
+                b.channel
+            ) {
+
+                return (
+                    a.channel -
+                    b.channel
+                );
+            }
+
+
+            if (
+                a.data1 !==
+                b.data1
+            ) {
+
+                return (
+                    a.data1 -
+                    b.data1
+                );
+            }
+
+
+            return (
+                a.sourceTrack -
+                b.sourceTrack
+            );
+        }
+    );
+
+
+    events.forEach(
+        function(
+            event,
+            index
+        ) {
+
+            event.index =
+                index;
+        }
+    );
+
+
+    const channelList =
+        Array.from(
+            channelsFound
+        )
+        .sort(
+            function(a, b) {
+
+                return a - b;
+            }
+        );
+
+
+    return {
+
+        events:
+            events,
+
+        totalNotes:
+            totalNotes,
+
+        channels:
+            channelList
+    };
+}
+
+
+// =============================================================
+// EXPECTED SOUNDS BY CHANNEL
+// =============================================================
+
+function makeExpectedSoundsByChannel(
+    midi
+) {
+
+    const channels =
+        new Map();
+
+
+    midi.tracks.forEach(
+        function(track) {
+
+            if (
+                track.notes.length === 0
+            ) {
+
+                return;
+            }
+
+
+            const channel =
+                track.channel;
+
+
+            if (
+                !channels.has(
+                    channel
+                )
+            ) {
+
+                channels.set(
+                    channel,
+                    new Map()
+                );
+            }
+
+
+            const sounds =
+                channels.get(
+                    channel
+                );
+
+
+            if (
+                track.instrument
+            ) {
+
+                const number =
+                    track.instrument.number;
+
+
+                const name =
+                    track.instrument.name ||
+                    "Unknown";
+
+
+                const key =
+                    String(
+                        number
+                    ) +
+                    "|" +
+                    name;
+
+
+                sounds.set(
+                    key,
+                    {
+                        number:
+                            number,
+
+                        name:
+                            name
+                    }
+                );
+            }
+        }
+    );
+
+
+    if (
+        channels.size === 0
+    ) {
+
+        return "-";
+    }
+
+
+    const lines = [];
+
+
+    Array.from(
+        channels.keys()
+    )
+    .sort(
+        function(a, b) {
+
+            return a - b;
+        }
+    )
+    .forEach(
+        function(channel) {
+
+            const sounds =
+                Array.from(
+                    channels
+                        .get(channel)
+                        .values()
+                );
+
+
+            if (
+                sounds.length === 0
+            ) {
+
+                lines.push(
+                    "Channel " +
+                    (channel + 1) +
+                    " — unknown"
+                );
+
+                return;
+            }
+
+
+            const descriptions =
+                sounds.map(
+                    function(sound) {
+
+                        return (
+                            sound.name +
+                            " [" +
+                            sound.number +
+                            "]"
+                        );
+                    }
+                );
+
+
+            lines.push(
+                "Channel " +
+                (channel + 1) +
+                " — " +
+                descriptions.join(
+                    " / "
+                )
+            );
+        }
+    );
+
+
+    return lines.join(
+        "   |   "
+    );
+}
+
+
+// =============================================================
+// USED STANDARD MIDI DRUM SOUNDS
+// =============================================================
+
+const GM_DRUM_NAMES = {
+
+    35: "Acoustic Bass Drum",
+    36: "Bass Drum 1",
+    37: "Side Stick",
+    38: "Acoustic Snare",
+    39: "Hand Clap",
+    40: "Electric Snare",
+    41: "Low Floor Tom",
+    42: "Closed Hi-Hat",
+    43: "High Floor Tom",
+    44: "Pedal Hi-Hat",
+    45: "Low Tom",
+    46: "Open Hi-Hat",
+    47: "Low-Mid Tom",
+    48: "Hi-Mid Tom",
+    49: "Crash Cymbal 1",
+    50: "High Tom",
+    51: "Ride Cymbal 1",
+    52: "Chinese Cymbal",
+    53: "Ride Bell",
+    54: "Tambourine",
+    55: "Splash Cymbal",
+    56: "Cowbell",
+    57: "Crash Cymbal 2",
+    58: "Vibraslap",
+    59: "Ride Cymbal 2",
+    60: "Hi Bongo",
+    61: "Low Bongo",
+    62: "Mute Hi Conga",
+    63: "Open Hi Conga",
+    64: "Low Conga",
+    65: "High Timbale",
+    66: "Low Timbale",
+    67: "High Agogo",
+    68: "Low Agogo",
+    69: "Cabasa",
+    70: "Maracas",
+    71: "Short Whistle",
+    72: "Long Whistle",
+    73: "Short Guiro",
+    74: "Long Guiro",
+    75: "Claves",
+    76: "Hi Wood Block",
+    77: "Low Wood Block",
+    78: "Mute Cuica",
+    79: "Open Cuica",
+    80: "Mute Triangle",
+    81: "Open Triangle"
+};
+
+
+function makeUsedDrumSounds(
+    midi
+) {
+
+    const usedByChannel =
+        new Map();
+
+
+    midi.tracks.forEach(
+        function(track) {
+
+            const isPercussionTrack =
+                (
+                    track.channel === 9 ||
+                    (
+                        track.instrument &&
+                        track.instrument.percussion === true
+                    )
+                );
+
+
+            if (
+                !isPercussionTrack
+            ) {
+
+                return;
+            }
+
+
+            if (
+                !usedByChannel.has(
+                    track.channel
+                )
+            ) {
+
+                usedByChannel.set(
+                    track.channel,
+                    new Set()
+                );
+            }
+
+
+            const notes =
+                usedByChannel.get(
+                    track.channel
+                );
+
+
+            track.notes.forEach(
+                function(note) {
+
+                    if (
+                        Object.prototype
+                            .hasOwnProperty.call(
+                                GM_DRUM_NAMES,
+                                note.midi
+                            )
+                    ) {
+
+                        notes.add(
+                            note.midi
+                        );
+                    }
+                }
+            );
+        }
+    );
+
+
+    const channelEntries =
+        Array.from(
+            usedByChannel.entries()
+        )
+        .map(
+            function(entry) {
+
+                return [
+                    entry[0],
+                    Array.from(
+                        entry[1]
+                    )
+                    .sort(
+                        function(a, b) {
+
+                            return a - b;
+                        }
+                    )
+                ];
+            }
+        )
+        .filter(
+            function(entry) {
+
+                return (
+                    entry[1].length > 0
+                );
+            }
+        )
+        .sort(
+            function(a, b) {
+
+                return a[0] - b[0];
+            }
+        );
+
+
+    if (
+        channelEntries.length === 0
+    ) {
+
+        return "-";
+    }
+
+
+    return channelEntries
+        .map(
+            function(entry) {
+
+                const channel =
+                    entry[0];
+
+                const notes =
+                    entry[1];
+
+
+                const descriptions =
+                    notes.map(
+                        function(noteNumber) {
+
+                            return (
+                                noteNumber +
+                                " — " +
+                                GM_DRUM_NAMES[
+                                    noteNumber
+                                ]
+                            );
+                        }
+                    );
+
+
+                return (
+                    "Channel " +
+                    (channel + 1) +
+                    ": " +
+                    descriptions.join(
+                        "   |   "
+                    )
+                );
+            }
+        )
+        .join(
+            "      ||      "
+        );
+}
+
+
+// =============================================================
+// TRACK INFORMATION
+// =============================================================
+
+function makeTrackInfo(midi) {
+
+    const lines = [];
+
+
+    midi.tracks.forEach(
+        function(
+            track,
+            index
+        ) {
+
+            let ccCount = 0;
+
+
+            for (
+                let controllerNumber = 0;
+                controllerNumber < 128;
+                controllerNumber++
+            ) {
+
+                const changes =
+                    track.controlChanges[
+                        controllerNumber
+                    ];
+
+
+                if (
+                    Array.isArray(
+                        changes
+                    )
+                ) {
+
+                    ccCount +=
+                        changes.length;
+                }
+            }
+
+
+            lines.push(
+                "Track " +
+                index
+            );
+
+            lines.push(
+                "  Name: " +
+                (
+                    track.name ||
+                    "(none)"
+                )
+            );
+
+            lines.push(
+                "  Channel: " +
+                (track.channel + 1)
+            );
+
+            lines.push(
+                "  Notes: " +
+                track.notes.length
+            );
+
+            lines.push(
+                "  Control Changes: " +
+                ccCount
+            );
+
+            lines.push(
+                "  Pitch Bends: " +
+                track.pitchBends.length
+            );
+
+
+            if (
+                track.instrument
+            ) {
+
+                lines.push(
+                    "  Instrument: " +
+                    track.instrument.name +
+                    " (" +
+                    track.instrument.number +
+                    ")"
+                );
+            }
+
+
+            lines.push("");
+        }
+    );
+
+
+    return lines.join(
+        "\n"
+    );
+}
+
+
+// =============================================================
+// EVENT PREVIEW
+// =============================================================
+
+function makePreview(events) {
+
+    const count =
+        Math.min(
+            events.length,
+            20
+        );
+
+    const lines = [];
+
+
+    for (
+        let i = 0;
+        i < count;
+        i++
+    ) {
+
+        const e =
+            events[i];
+
+
+        const typeName =
+            (
+                EVENT_TYPE_NAMES[
+                    e.type
+                ] ||
+                (
+                    "Type " +
+                    e.type
+                )
+            )
+            .toUpperCase();
+
+
+        lines.push(
+
+            String(
+                e.index
+            )
+            .padStart(
+                4,
+                " "
+            ) +
+
+            "   t=" +
+
+            e.time
+                .toFixed(6)
+                .padStart(
+                    11,
+                    " "
+                ) +
+
+            "   " +
+
+            typeName
+                .padEnd(
+                    14,
+                    " "
+                ) +
+
+            "   ch=" +
+            (e.channel + 1) +
+
+            "   data1=" +
+            e.data1 +
+
+            "   data2=" +
+            e.data2 +
+
+            "   track=" +
+            e.sourceTrack
+        );
+    }
+
+
+    if (
+        events.length >
+        count
+    ) {
+
+        lines.push(
+            "",
+            "... " +
+            (
+                events.length -
+                count
+            ) +
+            " more events"
+        );
+    }
+
+
+    return lines.join(
+        "\n"
+    );
+}
+
+
+// =============================================================
+// LOAD BINARY MIDI
+// =============================================================
+
+async function loadMidiFile() {
+
+    const select =
+        document.getElementById(
+            "fileSelect"
+        );
+
+    const filename =
+        select.value;
+
+
+    if (!filename) {
+        return;
+    }
+
+
+    const button =
+        document.getElementById(
+            "loadButton"
+        );
+
+
+    button.disabled =
+        true;
+
+
+    resetImportStats();
+
+    clearMidiDisplay();
+
+
+    document.getElementById(
+        "selectedFile"
+    ).textContent =
+        filename;
+
+
+    setStatus(
+        "Loading binary MIDI: " +
+        filename +
+        "..."
+    );
+
+
+    try {
+
+        const url =
+
+            MIDI_BASE_URL +
+
+            encodeURI(
+                filename
+            ) +
+
+            "?t=" +
+
+            Date.now();
+
+
+        const response =
+            await fetch(
+
+                url,
+
+                {
+                    cache:
+                        "no-store"
+                }
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "HTTP " +
+                response.status +
+                " " +
+                response.statusText
+            );
+        }
+
+
+        const arrayBuffer =
+            await response.arrayBuffer();
+
+
+        const midi =
+            new Midi(
+                arrayBuffer
+            );
+
+
+        const result =
+            convertMidi(
+                midi
+            );
+
+
+        parsedEvents =
+            result.events;
+
+
+        document.getElementById(
+            "midiName"
+        ).textContent =
+            midi.name ||
+            "(none)";
+
+
+        document.getElementById(
+            "ppq"
+        ).textContent =
+            midi.header.ppq;
+
+
+        document.getElementById(
+            "trackCount"
+        ).textContent =
+            midi.tracks.length;
+
+
+        document.getElementById(
+            "noteCount"
+        ).textContent =
+            result.totalNotes;
+
+
+        document.getElementById(
+            "eventCount"
+        ).textContent =
+            parsedEvents.length;
+
+
+        document.getElementById(
+            "eventTypeCounts"
+        ).textContent =
+            makeEventTypeCounts(
+                parsedEvents
+            );
+
+
+        document.getElementById(
+            "channelCount"
+        ).textContent =
+
+            result.channels.length +
+
+            " (" +
+
+            result.channels
+                .map(
+                    function(channel) {
+
+                        return channel + 1;
+                    }
+                )
+                .join(
+                    ", "
+                ) +
+
+            ")";
+
+
+        document.getElementById(
+            "expectedSounds"
+        ).textContent =
+            makeExpectedSoundsByChannel(
+                midi
+            );
+
+
+        document.getElementById(
+            "drumSounds"
+        ).textContent =
+            makeUsedDrumSounds(
+                midi
+            );
+
+
+        const polyphony =
+            analyzePolyphony(
+                parsedEvents
+            );
+
+
+        document.getElementById(
+            "channelPolyphony"
+        ).textContent =
+            makeChannelPolyphonyText(
+                polyphony
+            );
+
+
+        document.getElementById(
+            "totalPeakPolyphony"
+        ).textContent =
+            polyphony.maximumTotal;
+
+
+        document.getElementById(
+            "duration"
+        ).textContent =
+
+            midi.duration
+                .toFixed(6) +
+
+            " seconds";
+
+
+        document.getElementById(
+            "trackInfo"
+        ).textContent =
+            makeTrackInfo(
+                midi
+            );
+
+
+        document.getElementById(
+            "preview"
+        ).textContent =
+            makePreview(
+                parsedEvents
+            );
+
+
+        requestedEventCount =
+            null;
+
+
+        refreshFilteredEvents();
+
+
+        if (
+            pendingEventRequest !==
+            null
+        ) {
+
+            const request =
+                pendingEventRequest;
+
+
+            pendingEventRequest =
+                null;
+
+
+            setEventLimit(
+                request
+            );
+        }
+
+
+        setStatus(
+            "MIDI parsed successfully."
+        );
+
+    }
+
+    catch (error) {
+
+        console.error(
+            error
+        );
+
+
+        clearMidiDisplay();
+
+
+        document.getElementById(
+            "selectedFile"
+        ).textContent =
+            filename;
+
+
+        setStatus(
+            "ERROR: " +
+            error.message
+        );
+
+
+        document.getElementById(
+            "preview"
+        ).textContent =
+            String(
+                error.stack ||
+                error
+            );
+    }
+
+    finally {
+
+        button.disabled =
+            false;
+
+
+        updateImportButton();
+    }
+}
+
+
+// =============================================================
+// PATCHWORLD WIRELESS SUBSCRIPTIONS
+// =============================================================
+
+async function subscribeToResponses() {
+
+    try {
+
+        document.getElementById(
+            "wirelessStatus"
+        ).textContent =
+            "Subscribing...";
+
+
+        await PatchWorld.subscribeWifi(
+            CHANNELS.ack
+        );
+
+
+        await PatchWorld.subscribeWifi(
+            CHANNELS.nak
+        );
+
+
+        await PatchWorld.subscribeWifi(
+            CHANNELS.eventsRequested
+        );
+
+
+        await PatchWorld.subscribeWifi(
+            CHANNELS.abortImport
+        );
+
+
+        await PatchWorld.subscribeWifi(
+            CHANNELS.comChannel
+        );
+
+
+        wirelessReady =
+            true;
+
+
+        document.getElementById(
+            "wirelessStatus"
+        ).textContent =
+            "ACK/NAK/request/abort/channel subscribed";
+
+
+        updateImportButton();
+
+    }
+
+    catch (error) {
+
+        wirelessReady =
+            false;
+
+
+        document.getElementById(
+            "wirelessStatus"
+        ).textContent =
+            "Subscription ERROR";
+
+
+        setStatus(
+            "Wireless subscription failed: " +
+            error
+        );
+    }
+}
+
+
+// =============================================================
+// PATCHWORLD BRIDGE
+// =============================================================
+
+PatchWorld.onData =
+    async function(context) {
+
+        bridgeReady =
+            true;
+
+
+        document.getElementById(
+            "bridgeStatus"
+        ).textContent =
+            "Connected";
+
+
+        await subscribeToResponses();
+
+
+        updateImportButton();
+    };
+
+
+PatchWorld.onDisconnected =
+    function() {
+
+        bridgeReady =
+            false;
+
+        wirelessReady =
+            false;
+
+
+        document.getElementById(
+            "bridgeStatus"
+        ).textContent =
+            "Disconnected";
+
+
+        document.getElementById(
+            "wirelessStatus"
+        ).textContent =
+            "Not subscribed";
+
+
+        if (importing) {
+
+            stopImport(
+                "Bridge disconnected during import."
+            );
+        }
+
+
+        updateImportButton();
+    };
+
+
+// =============================================================
+// CURRENT ARRAY WRITE
+// =============================================================
+
+function getCurrentFieldInfo() {
+
+    const event =
+        filteredEvents[
+            currentEventIndex
+        ];
+
+
+    const fieldName =
+        FIELD_ORDER[
+            currentFieldIndex
+        ];
+
+
+    return {
+
+        event:
+            event,
+
+        fieldName:
+            fieldName,
+
+        index:
+            currentEventIndex,
+
+        value:
+            event[
+                fieldName
+            ],
+
+        channels:
+            CHANNELS[
+                fieldName
+            ]
+    };
+}
+
+
+// =============================================================
+// SEND ONE MIDI FLASH ARRAY WRITE
+// =============================================================
+
+async function sendCurrentWrite() {
+
+    if (
+        !Number.isInteger(
+            midiComChannel
+        ) ||
+        midiComChannel < 1
+    ) {
+
+        stopImport(
+            "Import stopped: no valid MIDI Flash communication channel is selected."
+        );
+
+        return;
+    }
+
+
+    if (
+        !importing ||
+        abortRequested
+    ) {
+
+        return;
+    }
+
+
+    if (
+        currentEventIndex >=
+        importEventLimit
+    ) {
+
+        completeImport();
+
+        return;
+    }
+
+
+    const info =
+        getCurrentFieldInfo();
+
+
+    document.getElementById(
+        "currentWrite"
+    ).textContent =
+
+        "event " +
+        currentEventIndex +
+
+        " / " +
+        (
+            EVENT_TYPE_NAMES[
+                info.event.type
+            ] ||
+            (
+                "Type " +
+                info.event.type
+            )
+        ) +
+
+        " / " +
+        info.fieldName +
+
+        "[" +
+        info.index +
+        "] = " +
+
+        info.value +
+
+        "  [Flash " +
+
+        midiComChannel +
+
+        "]";
+
+
+    waitingForResponse =
+        true;
+
+    pausedForNoResponse =
+        false;
+
+
+    clearTimeout(
+        responseTimer
+    );
+
+
+    responseTimer =
+        setTimeout(
+
+            function() {
+
+                if (
+                    !waitingForResponse ||
+                    !importing
+                ) {
+
+                    return;
+                }
+
+
+                pausedForNoResponse =
+                    true;
+
+
+                clearTimeout(
+                    responseTimer
+                );
+
+
+                const info =
+                    getCurrentFieldInfo();
+
+
+                setStatus(
+                    "MIDI Flash not responding — import paused at event " +
+                    currentEventIndex +
+                    ", " +
+                    info.fieldName +
+                    "[" +
+                    info.index +
+                    "]. Waiting for Patchworld to resume..."
+                );
+
+            },
+
+            ACK_TIMEOUT_MS
+        );
+
+
+    try {
+
+        await PatchWorld.sendWirelessJolt(
+            info.channels.index,
+            info.index,
+            midiComChannel
+        );
+
+
+        await PatchWorld.sendWirelessJolt(
+            info.channels.value,
+            info.value,
+            midiComChannel
+        );
+
+    }
+
+    catch (error) {
+
+        clearTimeout(
+            responseTimer
+        );
+
+
+        waitingForResponse =
+            false;
+
+
+        retryCurrentWrite(
+            "Send error: " +
+            error
+        );
+    }
+}
+
+
+// =============================================================
+// RECEIVE ACK / NAK / CONTROL SIGNALS
+// =============================================================
+
+PatchWorld.onWifiJolt =
+    function(
+        channel,
+        value
+    ) {
+
+
+        if (
+            channel ===
+            CHANNELS.comChannel
+        ) {
+
+            if (importing) {
+
+                console.warn(
+                    "Ignoring MIDI Flash channel change during import."
+                );
+
+                return;
+            }
+
+
+            const requestedChannel =
+                Math.floor(
+                    Number(
+                        value
+                    )
+                );
+
+
+            if (
+                !Number.isFinite(
+                    requestedChannel
+                ) ||
+                requestedChannel < 1
+            ) {
+
+                midiComChannel =
+                    null;
+
+
+                document.getElementById(
+                    "comChannel"
+                ).textContent =
+                    "Waiting...";
+
+
+                setStatus(
+                    "Ignoring invalid MIDI Flash communication channel. Waiting for channel 1 or higher."
+                );
+
+
+                updateImportButton();
+
+
+                return;
+            }
+
+
+            midiComChannel =
+                requestedChannel;
+
+
+            document.getElementById(
+                "comChannel"
+            ).textContent =
+                midiComChannel;
+
+
+            setStatus(
+                "MIDI Flash communication channel set to " +
+                midiComChannel
+            );
+
+
+            updateImportButton();
+
+
+            return;
+        }
+
+
+        if (
+            channel ===
+            CHANNELS.abortImport
+        ) {
+
+            if (importing) {
+
+                stopImport(
+                    "Import aborted from Patchworld."
+                );
+            }
+
+            return;
+        }
+
+
+        if (
+            channel ===
+            CHANNELS.eventsRequested
+        ) {
+
+            if (importing) {
+                return;
+            }
+
+
+            const requested =
+                Math.floor(
+                    Number(
+                        value
+                    )
+                );
+
+
+            if (
+                !Number.isFinite(
+                    requested
+                )
+            ) {
+
+                return;
+            }
+
+
+            if (
+                parsedEvents.length === 0
+            ) {
+
+                pendingEventRequest =
+                    requested;
+
+
+                setStatus(
+                    "Requested event count received: " +
+                    requested +
+                    " (waiting for MIDI file)"
+                );
+
+            } else {
+
+                setEventLimit(
+                    requested
+                );
+
+
+                setStatus(
+                    "Events requested from Patchworld: " +
+                    importEventLimit
+                );
+            }
+
+
+            return;
+        }
+
+
+        if (!importing) {
+            return;
+        }
+
+
+        if (
+            channel ===
+            CHANNELS.ack
+        ) {
+
+            if (
+                !waitingForResponse
+            ) {
+
+                return;
+            }
+
+
+            clearTimeout(
+                responseTimer
+            );
+
+
+            waitingForResponse =
+                false;
+
+            pausedForNoResponse =
+                false;
+
+
+            ackCount++;
+
+            completedWrites++;
+
+
+            retryForCurrentWrite =
+                0;
+
+
+            updateCounters();
+
+
+            advanceToNextWrite();
+
+            return;
+        }
+
+
+        if (
+            channel ===
+            CHANNELS.nak
+        ) {
+
+            if (
+                !waitingForResponse
+            ) {
+
+                return;
+            }
+
+
+            clearTimeout(
+                responseTimer
+            );
+
+
+            waitingForResponse =
+                false;
+
+            pausedForNoResponse =
+                false;
+
+
+            nakCount++;
+
+
+            updateCounters();
+
+
+            retryCurrentWrite(
+                "NAK received"
+            );
+        }
+    };
+
+
+// =============================================================
+// ADVANCE TO NEXT WRITE
+// =============================================================
+
+async function advanceToNextWrite() {
+
+    currentFieldIndex++;
+
+
+    if (
+        currentFieldIndex >=
+        FIELD_ORDER.length
+    ) {
+
+        currentFieldIndex =
+            0;
+
+        currentEventIndex++;
+
+
+        const progress =
+            currentEventIndex /
+            importEventLimit;
+
+
+        try {
+
+            await PatchWorld.sendWirelessJolt(
+                CHANNELS.importProgress,
+                progress
+            );
+
+        }
+
+        catch (error) {
+
+            console.warn(
+                "Failed to send MIDI import progress:",
+                error
+            );
+        }
+    }
+
+
+    if (
+        currentEventIndex >=
+        importEventLimit
+    ) {
+
+        completeImport();
+
+        return;
+    }
+
+
+    sendCurrentWrite();
+}
+
+
+// =============================================================
+// RESUME AFTER NO-RESPONSE PAUSE
+// =============================================================
+
+function resumePausedImport(
+    reason
+) {
+
+    if (
+        !importing ||
+        !pausedForNoResponse
+    ) {
+
+        return;
+    }
+
+
+    pausedForNoResponse =
+        false;
+
+    waitingForResponse =
+        false;
+
+
+    clearTimeout(
+        responseTimer
+    );
+
+
+    const info =
+        getCurrentFieldInfo();
+
+
+    setStatus(
+        "Patchworld resumed — resending event " +
+        currentEventIndex +
+        ", " +
+        info.fieldName +
+        "[" +
+        info.index +
+        "] (" +
+        reason +
+        ")."
+    );
+
+
+    setTimeout(
+        sendCurrentWrite,
+        0
+    );
+}
+
+
+// If the headset/browser is suspended during a long import, the current
+// event/field/index is preserved. When the page becomes active again,
+// resend that exact pending write. Repeating the same array index/value
+// is harmless; advancement still occurs only after ACK.
+
+document.addEventListener(
+    "visibilitychange",
+    function() {
+
+        if (
+            document.visibilityState ===
+            "visible"
+        ) {
+
+            resumePausedImport(
+                "page visible"
+            );
+        }
+    }
+);
+
+
+window.addEventListener(
+    "pageshow",
+    function() {
+
+        resumePausedImport(
+            "page shown"
+        );
+    }
+);
+
+
+window.addEventListener(
+    "focus",
+    function() {
+
+        resumePausedImport(
+            "page focused"
+        );
+    }
+);
+
+
+// =============================================================
+// RETRY
+// =============================================================
+
+function retryCurrentWrite(
+    reason
+) {
+
+    retryForCurrentWrite++;
+
+    retryCount++;
+
+
+    updateCounters();
+
+
+    if (
+        retryForCurrentWrite >
+        MAX_RETRIES
+    ) {
+
+        const info =
+            getCurrentFieldInfo();
+
+
+        stopImport(
+
+            "FAILED: " +
+
+            info.fieldName +
+
+            "[" +
+            info.index +
+            "] after " +
+
+            MAX_RETRIES +
+
+            " retries. " +
+
+            reason
+        );
+
+
+        return;
+    }
+
+
+    setStatus(
+
+        "Retry " +
+
+        retryForCurrentWrite +
+
+        "/" +
+
+        MAX_RETRIES +
+
+        ": " +
+
+        reason
+    );
+
+
+    setTimeout(
+        sendCurrentWrite,
+        0
+    );
+}
+
+
+// =============================================================
+// START IMPORT
+// =============================================================
+
+function startImport() {
+
+    if (
+        filteredEvents.length === 0 ||
+        !bridgeReady ||
+        !wirelessReady ||
+        importEventLimit === 0 ||
+        !Number.isInteger(
+            midiComChannel
+        ) ||
+        midiComChannel < 1
+    ) {
+
+        return;
+    }
+
+
+    importing =
+        true;
+
+
+    abortRequested =
+        false;
+
+
+    pausedForNoResponse =
+        false;
+
+
+    currentEventIndex =
+        0;
+
+
+    currentFieldIndex =
+        0;
+
+
+    completedWrites =
+        0;
+
+
+    ackCount =
+        0;
+
+
+    nakCount =
+        0;
+
+
+    retryCount =
+        0;
+
+
+    retryForCurrentWrite =
+        0;
+
+
+    waitingForResponse =
+        false;
+
+    pausedForNoResponse =
+        false;
+
+
+    updateCounters();
+
+
+    document.getElementById(
+        "importButton"
+    ).disabled =
+        true;
+
+
+    document.getElementById(
+        "loadButton"
+    ).disabled =
+        true;
+
+
+    document.getElementById(
+        "fileSelect"
+    ).disabled =
+        true;
+
+
+    document.getElementById(
+        "abortButton"
+    ).disabled =
+        false;
+
+
+    setFilterControlsDisabled(
+        true
+    );
+
+
+    setStatus(
+        "Import started to MIDI Flash channel " +
+        midiComChannel +
+        "..."
+    );
+
+
+    PatchWorld.sendWirelessJolt(
+        CHANNELS.importProgress,
+        0
+    ).catch(
+
+        error =>
+            console.warn(
+                "Failed to send initial MIDI progress:",
+                error
+            )
+    );
+
+
+    sendCurrentWrite();
+}
+
+
+// =============================================================
+// IMPORT COMPLETE
+// =============================================================
+
+async function completeImport() {
+
+    clearTimeout(
+        responseTimer
+    );
+
+
+    if (
+        !Number.isInteger(
+            midiComChannel
+        ) ||
+        midiComChannel < 1
+    ) {
+
+        stopImport(
+            "Import stopped: MIDI Flash communication channel became invalid before event count was sent."
+        );
+
+        return;
+    }
+
+
+    importing =
+        false;
+
+
+    waitingForResponse =
+        false;
+
+
+    try {
+
+        await PatchWorld.sendWirelessJolt(
+            CHANNELS.eventCount,
+            importEventLimit,
+            midiComChannel
+        );
+
+    }
+
+    catch (error) {
+
+        setStatus(
+            "Arrays imported, but midi_event_count send failed: " +
+            error
+        );
+
+
+        restoreControls();
+
+        return;
+    }
+
+
+    document.getElementById(
+        "currentWrite"
+    ).textContent =
+        "Complete";
+
+
+    setStatus(
+
+        "IMPORT COMPLETE — " +
+
+        completedWrites +
+
+        " verified writes. " +
+
+        importEventLimit +
+
+        " filtered events stored on MIDI Flash channel " +
+
+        midiComChannel
+    );
+
+
+    restoreControls();
+}
+
+
+// =============================================================
+// RESTORE CONTROLS
+// =============================================================
+
+function restoreControls() {
+
+    document.getElementById(
+        "abortButton"
+    ).disabled =
+        true;
+
+
+    document.getElementById(
+        "loadButton"
+    ).disabled =
+        false;
+
+
+    document.getElementById(
+        "fileSelect"
+    ).disabled =
+        false;
+
+
+    setFilterControlsDisabled(
+        false
+    );
+
+
+    updateImportButton();
+}
+
+
+// =============================================================
+// ABORT / FAILURE
+// =============================================================
+
+function stopImport(reason) {
+
+    clearTimeout(
+        responseTimer
+    );
+
+
+    abortRequested =
+        true;
+
+
+    importing =
+        false;
+
+
+    waitingForResponse =
+        false;
+
+    pausedForNoResponse =
         false;
 
 
