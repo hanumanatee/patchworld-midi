@@ -27,6 +27,7 @@
         button:disabled, select:disabled { opacity:.5; }
         #eventLimit, #comChannel { font-family:monospace; font-size:22px; font-weight:bold; }
         #eventTypeCounts, #filteredEventTypeCounts, #requestedEventTypeCounts, #expectedSounds, #drumSounds, #channelPolyphony, #totalPeakPolyphony { font-family:monospace; }
+        #expectedSounds, #channelPolyphony { white-space:pre-line; }
         .event-filter-list { margin-top:4px; }
         .event-filter-row { display:block; margin:9px 0; font-size:17px; }
         .event-filter-row input { transform:scale(1.25); margin-right:9px; }
@@ -56,7 +57,7 @@
         <h1>Patchworld MIDI Importer</h1>
         <div id="author">Hanumanatee</div>
     </div>
-    <div id="revision">MIDI5 REV 4</div>
+    <div id="revision">MIDI5 REV 5</div>
 </div>
 
 <div class="layout">
@@ -800,7 +801,7 @@ function makeChannelPolyphonyText(
             }
         )
         .join(
-            "   |   "
+            "\n"
         );
 }
 
@@ -1870,7 +1871,7 @@ function makeExpectedSoundsByChannel(
 
 
     return lines.join(
-        "   |   "
+        "\n"
     );
 }
 
@@ -3828,7 +3829,7 @@ loadMidiDirectory();
 <script>
 // =============================================================
 // =============================================================
-// COPY AUDIO SETUP INFO — MIDI5 REV 4
+// COPY AUDIO SETUP INFO — MIDI5 REV 5
 // Copies the already-parsed channel/instrument information shown
 // in File Information so it can be pasted into a PW Text block.
 // =============================================================
