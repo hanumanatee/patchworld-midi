@@ -38,6 +38,8 @@
         .good { color:#69d36f; }
         .bad { color:#ff6b6b; }
         .value { font-family:monospace; }
+        .clipboard-test-row { margin-top:14px; padding-top:12px; border-top:1px solid #3b4146; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+        #copyTestStatus { color:#aeb5ba; font-size:15px; }
         @media (max-width:900px) {
             body { margin:16px; }
             .layout, .diagnostics { grid-template-columns:1fr; }
@@ -54,7 +56,7 @@
         <h1>Patchworld MIDI Importer</h1>
         <div id="author">Hanumanatee</div>
     </div>
-    <div id="revision">MIDI5 REV 2</div>
+    <div id="revision">MIDI5 REV 3</div>
 </div>
 
 <div class="layout">
@@ -110,6 +112,10 @@
             <div class="wide-info"><span class="label">Expected sounds by channel:</span> <span id="expectedSounds">-</span></div>
             <div class="wide-info"><span class="label">Used standard MIDI drum sounds:</span> <span id="drumSounds">-</span></div>
             <div class="wide-info"><span class="label">Maximum simultaneous voices by channel:</span> <span id="channelPolyphony">-</span></div>
+            <div class="clipboard-test-row">
+                <button id="copyTestButton" type="button">Copy Test Text</button>
+                <span id="copyTestStatus">Clipboard test only</span>
+            </div>
         </div>
     </div>
 </div>
@@ -3817,6 +3823,79 @@ updateSelectAllState();
 
 loadMidiDirectory();
 
+</script>
+
+<script>
+// =============================================================
+// CLIPBOARD TEST — MIDI5 REV 3
+// Isolated from the MIDI importer logic. This only tests whether
+// text copied by the Vuplex browser can be pasted into Patchworld.
+// =============================================================
+
+(function() {
+    const testText =
+        "Patchworld MIDI Importer clipboard test\n" +
+        "Channel 1 — Piano\n" +
+        "Channel 2 — Bass\n" +
+        "Channel 10 — Drums";
+
+    const button = document.getElementById("copyTestButton");
+    const status = document.getElementById("copyTestStatus");
+
+    async function copyWithClipboardApi() {
+        if (!navigator.clipboard || !navigator.clipboard.writeText) {
+            return false;
+        }
+
+        await navigator.clipboard.writeText(testText);
+        return true;
+    }
+
+    function copyWithTextareaFallback() {
+        const textarea = document.createElement("textarea");
+        textarea.value = testText;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+
+        let copied = false;
+
+        try {
+            copied = document.execCommand("copy");
+        } finally {
+            document.body.removeChild(textarea);
+        }
+
+        return copied;
+    }
+
+    button.addEventListener("click", async function() {
+        try {
+            let copied = false;
+
+            try {
+                copied = await copyWithClipboardApi();
+            } catch (error) {
+                copied = false;
+            }
+
+            if (!copied) {
+                copied = copyWithTextareaFallback();
+            }
+
+            status.textContent = copied
+                ? "Copied — try pasting into a Patchworld Text block."
+                : "Copy failed in this browser.";
+
+        } catch (error) {
+            console.error("Clipboard test failed:", error);
+            status.textContent = "Copy failed in this browser.";
+        }
+    });
+})();
 </script>
 
 </body>
