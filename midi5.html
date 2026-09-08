@@ -5,384 +5,140 @@
     <title>Patchworld MIDI Importer</title>
 
     <style>
-        body {
-            font-family: sans-serif;
-            background: #181818;
-            color: #eeeeee;
-            margin: 30px;
-        }
-
-        h1 {
-            margin-bottom: 5px;
-        }
-
-        #revision {
-            font-weight: bold;
-            margin-bottom: 20px;
-        }
-
-        #author {
-            font-size: 14px;
-            color: #aaaaaa;
-            margin-top: -2px;
-            margin-bottom: 14px;
-        }
-
-        .section {
-            margin-top: 18px;
-            padding: 14px;
-            background: #282828;
-            border-radius: 8px;
-        }
-
-        .label {
-            color: #aaaaaa;
-        }
-
-        button,
-        select {
-            font-size: 18px;
-            padding: 10px 18px;
-            margin-top: 10px;
-            margin-right: 8px;
-        }
-
-        select {
-            min-width: 320px;
-        }
-
-        #eventLimit,
-        #comChannel {
-            font-family: monospace;
-            font-size: 22px;
-            font-weight: bold;
-        }
-
-        #eventTypeCounts,
-        #filteredEventTypeCounts,
-        #requestedEventTypeCounts,
-        #expectedSounds,
-        #drumSounds,
-        #channelPolyphony,
-        #totalPeakPolyphony {
-            font-family: monospace;
-        }
-
-        .event-filter-list {
-            margin-top: 10px;
-        }
-
-        .event-filter-row {
-            display: block;
-            margin: 7px 0;
-            font-size: 17px;
-        }
-
-        .event-filter-row input {
-            transform: scale(1.25);
-            margin-right: 9px;
-        }
-
-        .master-filter-row {
-            margin-top: 14px;
-            padding-top: 10px;
-            border-top: 1px solid #444444;
-            font-weight: bold;
-        }
-
-        pre {
-            background: #111111;
-            padding: 12px;
-            white-space: pre-wrap;
-            overflow-wrap: anywhere;
-            max-height: 500px;
-            overflow-y: auto;
-        }
-
-        #status {
-            font-size: 18px;
-            margin-bottom: 8px;
-        }
-
-        .good {
-            color: #69d36f;
-        }
-
-        .bad {
-            color: #ff6b6b;
-        }
-
-        .value {
-            font-family: monospace;
+        * { box-sizing: border-box; }
+        body { font-family: sans-serif; background:#151719; color:#eeeeee; margin:26px; font-size:17px; }
+        h1 { margin:0 0 4px; font-size:32px; }
+        #revision { font-weight:bold; color:#b9c0c7; letter-spacing:.08em; }
+        #author { font-size:14px; color:#9ba2a8; margin-top:2px; }
+        .page-header { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; padding:4px 2px 16px; border-bottom:1px solid #41474d; }
+        .layout { display:grid; grid-template-columns:minmax(300px,.72fr) minmax(520px,1.65fr); gap:18px; margin-top:18px; align-items:start; }
+        .column { display:grid; gap:18px; }
+        .section { margin:0; padding:16px 18px; background:#23272a; border:1px solid #4a5157; border-radius:5px; min-width:0; }
+        .section-title { margin:-2px 0 14px; color:#d9dde0; font-size:14px; font-weight:bold; letter-spacing:.11em; text-transform:uppercase; border-bottom:1px solid #41474d; padding-bottom:8px; }
+        .label { color:#aeb5ba; }
+        .info-row { margin:5px 0; line-height:1.35; }
+        .stats-grid { display:grid; grid-template-columns:repeat(3,minmax(150px,1fr)); gap:8px 20px; margin-top:12px; }
+        .stat { min-width:0; }
+        .wide-info { margin-top:12px; padding-top:10px; border-top:1px solid #3b4146; line-height:1.45; overflow-wrap:anywhere; }
+        button, select { font-size:18px; padding:10px 18px; margin-top:10px; margin-right:8px; }
+        select { width:100%; min-width:0; max-width:100%; }
+        #importButton:not(:disabled) { font-weight:bold; border-width:2px; }
+        #abortButton { opacity:.9; }
+        button:disabled, select:disabled { opacity:.5; }
+        #eventLimit, #comChannel { font-family:monospace; font-size:22px; font-weight:bold; }
+        #eventTypeCounts, #filteredEventTypeCounts, #requestedEventTypeCounts, #expectedSounds, #drumSounds, #channelPolyphony, #totalPeakPolyphony { font-family:monospace; }
+        .event-filter-list { margin-top:4px; }
+        .event-filter-row { display:block; margin:9px 0; font-size:17px; }
+        .event-filter-row input { transform:scale(1.25); margin-right:9px; }
+        .master-filter-row { margin-top:14px; padding-top:10px; border-top:1px solid #444; font-weight:bold; }
+        #status { font-size:18px; font-weight:600; margin-bottom:12px; padding:10px 12px; background:#191c1e; border-left:3px solid #69747c; }
+        .import-grid { display:grid; grid-template-columns:minmax(260px,1.2fr) repeat(4,minmax(100px,.45fr)); gap:10px 18px; align-items:start; margin-top:12px; }
+        pre { background:#111315; border:1px solid #373d42; padding:12px; white-space:pre-wrap; overflow-wrap:anywhere; max-height:500px; overflow-y:auto; margin-bottom:0; }
+        .diagnostics { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:18px; }
+        .good { color:#69d36f; }
+        .bad { color:#ff6b6b; }
+        .value { font-family:monospace; }
+        @media (max-width:900px) {
+            body { margin:16px; }
+            .layout, .diagnostics { grid-template-columns:1fr; }
+            .stats-grid { grid-template-columns:repeat(2,minmax(140px,1fr)); }
+            .import-grid { grid-template-columns:1fr 1fr; }
         }
     </style>
 </head>
 
 <body>
 
-<div id="revision">MIDI5 REV 1</div>
-
-<h1>Patchworld MIDI Importer</h1>
-
-<div id="author">Hanumanatee</div>
-
-
-<div class="section">
-
+<div class="page-header">
     <div>
-        <span class="label">Bridge:</span>
-        <span id="bridgeStatus">Waiting...</span>
+        <h1>Patchworld MIDI Importer</h1>
+        <div id="author">Hanumanatee</div>
     </div>
-
-    <div>
-        <span class="label">Wireless:</span>
-        <span id="wirelessStatus">Not subscribed</span>
-    </div>
-
-    <div>
-        <span class="label">MIDI Flash channel:</span>
-        <span id="comChannel">Waiting...</span>
-    </div>
-
+    <div id="revision">MIDI5 REV 2</div>
 </div>
 
+<div class="layout">
+    <div class="column">
+        <div class="section">
+            <div class="section-title">MIDI Flash / Connection</div>
+            <div class="info-row"><span class="label">Bridge:</span> <span id="bridgeStatus">Waiting...</span></div>
+            <div class="info-row"><span class="label">Wireless:</span> <span id="wirelessStatus">Not subscribed</span></div>
+            <div class="info-row"><span class="label">MIDI Flash channel:</span> <span id="comChannel">Waiting...</span></div>
+        </div>
 
-<div class="section">
-
-    <div>
-        <span class="label">MIDI file:</span>
+        <div class="section">
+            <div class="section-title">Events to Import</div>
+            <div class="event-filter-list">
+                <label class="event-filter-row"><input type="checkbox" class="eventTypeCheckbox" data-event-type="0" checked> Note On (0)</label>
+                <label class="event-filter-row"><input type="checkbox" class="eventTypeCheckbox" data-event-type="1" checked> Note Off (1)</label>
+                <label class="event-filter-row"><input type="checkbox" class="eventTypeCheckbox" data-event-type="2"> Control Change (2)</label>
+                <label class="event-filter-row"><input type="checkbox" class="eventTypeCheckbox" data-event-type="4"> Pitch Bend (4)</label>
+                <label class="event-filter-row master-filter-row"><input type="checkbox" id="selectAllEventTypes"> Select all</label>
+            </div>
+        </div>
     </div>
 
-    <select id="fileSelect" disabled>
-        <option>Loading MIDI directory...</option>
-    </select>
+    <div class="column">
+        <div class="section">
+            <div class="section-title">MIDI File</div>
+            <select id="fileSelect" disabled><option>Loading MIDI directory...</option></select>
+            <div>
+                <button id="loadButton" disabled>Load and Parse MIDI</button>
+            </div>
+        </div>
 
-    <br>
-
-    <button id="loadButton" disabled>
-        Load and Parse MIDI
-    </button>
-
-    <button id="importButton" disabled>
-        Start Import
-    </button>
-
-    <button id="abortButton" disabled>
-        Abort
-    </button>
-
+        <div class="section">
+            <div class="section-title">File Information</div>
+            <div id="status">Waiting.</div>
+            <div class="stats-grid">
+                <div class="stat"><span class="label">Selected file:</span> <span id="selectedFile">-</span></div>
+                <div class="stat"><span class="label">MIDI name:</span> <span id="midiName">-</span></div>
+                <div class="stat"><span class="label">PPQ:</span> <span id="ppq">-</span></div>
+                <div class="stat"><span class="label">Parsed tracks:</span> <span id="trackCount">-</span></div>
+                <div class="stat"><span class="label">Notes:</span> <span id="noteCount">-</span></div>
+                <div class="stat"><span class="label">Parsed events:</span> <span id="eventCount">-</span></div>
+                <div class="stat"><span class="label">Events after filtering:</span> <span id="filteredEventCount">-</span></div>
+                <div class="stat"><span class="label">Events requested:</span> <span id="eventLimit">-</span></div>
+                <div class="stat"><span class="label">Detected channels:</span> <span id="channelCount">-</span></div>
+                <div class="stat"><span class="label">Peak polyphony:</span> <span id="totalPeakPolyphony">-</span></div>
+                <div class="stat"><span class="label">Duration:</span> <span id="duration">-</span></div>
+                <div class="stat"><span class="label">Writes required:</span> <span id="writesRequired">-</span></div>
+            </div>
+            <div class="wide-info"><span class="label">Event types in full file:</span> <span id="eventTypeCounts">-</span></div>
+            <div class="wide-info"><span class="label">Event types after filtering:</span> <span id="filteredEventTypeCounts">-</span></div>
+            <div class="wide-info"><span class="label">Event types in requested range:</span> <span id="requestedEventTypeCounts">-</span></div>
+            <div class="wide-info"><span class="label">Expected sounds by channel:</span> <span id="expectedSounds">-</span></div>
+            <div class="wide-info"><span class="label">Used standard MIDI drum sounds:</span> <span id="drumSounds">-</span></div>
+            <div class="wide-info"><span class="label">Maximum simultaneous voices by channel:</span> <span id="channelPolyphony">-</span></div>
+        </div>
+    </div>
 </div>
 
-
-<div class="section">
-
-    <div class="label">
-        Event types to import:
+<div class="section" style="margin-top:18px;">
+    <div class="section-title">Import</div>
+    <div>
+        <button id="importButton" disabled>Start Import</button>
+        <button id="abortButton" disabled>Abort</button>
     </div>
-
-    <div class="event-filter-list">
-
-        <label class="event-filter-row">
-            <input
-                type="checkbox"
-                class="eventTypeCheckbox"
-                data-event-type="0"
-                checked
-            >
-            Note On (0)
-        </label>
-
-        <label class="event-filter-row">
-            <input
-                type="checkbox"
-                class="eventTypeCheckbox"
-                data-event-type="1"
-                checked
-            >
-            Note Off (1)
-        </label>
-
-        <label class="event-filter-row">
-            <input
-                type="checkbox"
-                class="eventTypeCheckbox"
-                data-event-type="2"
-            >
-            Control Change (2)
-        </label>
-
-        <label class="event-filter-row">
-            <input
-                type="checkbox"
-                class="eventTypeCheckbox"
-                data-event-type="4"
-            >
-            Pitch Bend (4)
-        </label>
-
-        <label class="event-filter-row master-filter-row">
-            <input
-                type="checkbox"
-                id="selectAllEventTypes"
-            >
-            Select all
-        </label>
-
+    <div class="import-grid">
+        <div><span class="label">Current write:</span> <span id="currentWrite" class="value">-</span></div>
+        <div><span class="label">Completed writes:</span> <span id="completedWrites">0</span></div>
+        <div><span class="label">ACKs:</span> <span id="ackCount" class="good">0</span></div>
+        <div><span class="label">NAKs:</span> <span id="nakCount" class="bad">0</span></div>
+        <div><span class="label">Retries:</span> <span id="retryCount">0</span></div>
     </div>
-
 </div>
 
-
-<div class="section">
-
-    <div id="status">
-        Waiting.
+<div class="diagnostics">
+    <div class="section">
+        <div class="section-title">Track Information</div>
+        <pre id="trackInfo">No MIDI loaded yet.</pre>
     </div>
-
-    <div>
-        <span class="label">Selected file:</span>
-        <span id="selectedFile">-</span>
+    <div class="section">
+        <div class="section-title">Event Preview / Diagnostics</div>
+        <pre id="preview">No MIDI loaded yet.</pre>
     </div>
-
-    <div>
-        <span class="label">MIDI name:</span>
-        <span id="midiName">-</span>
-    </div>
-
-    <div>
-        <span class="label">PPQ:</span>
-        <span id="ppq">-</span>
-    </div>
-
-    <div>
-        <span class="label">Parsed tracks:</span>
-        <span id="trackCount">-</span>
-    </div>
-
-    <div>
-        <span class="label">Notes:</span>
-        <span id="noteCount">-</span>
-    </div>
-
-    <div>
-        <span class="label">Parsed events:</span>
-        <span id="eventCount">-</span>
-    </div>
-
-    <div>
-        <span class="label">Event types in full file:</span>
-        <span id="eventTypeCounts">-</span>
-    </div>
-
-    <div>
-        <span class="label">Events after type filtering:</span>
-        <span id="filteredEventCount">-</span>
-    </div>
-
-    <div>
-        <span class="label">Event types after filtering:</span>
-        <span id="filteredEventTypeCounts">-</span>
-    </div>
-
-    <div>
-        <span class="label">Events requested for import:</span>
-        <span id="eventLimit">-</span>
-    </div>
-
-    <div>
-        <span class="label">Event types in requested range:</span>
-        <span id="requestedEventTypeCounts">-</span>
-    </div>
-
-    <div>
-        <span class="label">Detected channels:</span>
-        <span id="channelCount">-</span>
-    </div>
-
-    <div>
-        <span class="label">Expected sounds by channel:</span>
-        <span id="expectedSounds">-</span>
-    </div>
-
-    <div>
-        <span class="label">Used standard MIDI drum sounds:</span>
-        <span id="drumSounds">-</span>
-    </div>
-
-    <div>
-        <span class="label">Maximum simultaneous voices by channel:</span>
-        <span id="channelPolyphony">-</span>
-    </div>
-
-    <div>
-        <span class="label">Total peak polyphony:</span>
-        <span id="totalPeakPolyphony">-</span>
-    </div>
-
-    <div>
-        <span class="label">Duration:</span>
-        <span id="duration">-</span>
-    </div>
-
-    <div>
-        <span class="label">Writes required:</span>
-        <span id="writesRequired">-</span>
-    </div>
-
 </div>
-
-
-<div class="section">
-
-    <div>
-        <span class="label">Current write:</span>
-        <span id="currentWrite" class="value">-</span>
-    </div>
-
-    <div>
-        <span class="label">Completed writes:</span>
-        <span id="completedWrites">0</span>
-    </div>
-
-    <div>
-        <span class="label">ACKs:</span>
-        <span id="ackCount" class="good">0</span>
-    </div>
-
-    <div>
-        <span class="label">NAKs:</span>
-        <span id="nakCount" class="bad">0</span>
-    </div>
-
-    <div>
-        <span class="label">Retries:</span>
-        <span id="retryCount">0</span>
-    </div>
-
-</div>
-
-
-<div class="section">
-
-    <div class="label">
-        Track information:
-    </div>
-
-    <pre id="trackInfo">No MIDI loaded yet.</pre>
-
-</div>
-
-
-<div class="section">
-
-    <div class="label">
-        First 20 parsed PW events:
-    </div>
-
-    <pre id="preview">No MIDI loaded yet.</pre>
-
-</div>
-
 
 <script src="https://unpkg.com/@tonejs/midi@2.0.28/build/Midi.js"></script>
 
