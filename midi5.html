@@ -56,7 +56,7 @@
         <h1>Patchworld MIDI Importer</h1>
         <div id="author">Hanumanatee</div>
     </div>
-    <div id="revision">MIDI5 REV 3</div>
+    <div id="revision">MIDI5 REV 4</div>
 </div>
 
 <div class="layout">
@@ -113,8 +113,8 @@
             <div class="wide-info"><span class="label">Used standard MIDI drum sounds:</span> <span id="drumSounds">-</span></div>
             <div class="wide-info"><span class="label">Maximum simultaneous voices by channel:</span> <span id="channelPolyphony">-</span></div>
             <div class="clipboard-test-row">
-                <button id="copyTestButton" type="button">Copy Test Text</button>
-                <span id="copyTestStatus">Clipboard test only</span>
+                <button id="copyTestButton" type="button">Copy Audio Setup Info</button>
+                <span id="copyTestStatus">Copies channel / instrument information for a Patchworld Text block.</span>
             </div>
         </div>
     </div>
@@ -3827,33 +3827,60 @@ loadMidiDirectory();
 
 <script>
 // =============================================================
-// CLIPBOARD TEST — MIDI5 REV 3
-// Isolated from the MIDI importer logic. This only tests whether
-// text copied by the Vuplex browser can be pasted into Patchworld.
+// =============================================================
+// COPY AUDIO SETUP INFO — MIDI5 REV 4
+// Copies the already-parsed channel/instrument information shown
+// in File Information so it can be pasted into a PW Text block.
 // =============================================================
 
 (function() {
-    const testText =
-        "Patchworld MIDI Importer clipboard test\n" +
-        "Channel 1 — Piano\n" +
-        "Channel 2 — Bass\n" +
-        "Channel 10 — Drums";
-
     const button = document.getElementById("copyTestButton");
     const status = document.getElementById("copyTestStatus");
 
-    async function copyWithClipboardApi() {
+    function displayText(id) {
+        const element = document.getElementById(id);
+        return element ? element.textContent.trim() : "-";
+    }
+
+    function makeAudioSetupText() {
+        const selectedFile = displayText("selectedFile");
+        const midiName = displayText("midiName");
+        const channels = displayText("channelCount");
+        const expectedSounds = displayText("expectedSounds");
+        const drumSounds = displayText("drumSounds");
+        const channelPolyphony = displayText("channelPolyphony");
+        const totalPeakPolyphony = displayText("totalPeakPolyphony");
+
+        return [
+            "PATCHWORLD MIDI AUDIO SETUP",
+            "File: " + selectedFile,
+            "MIDI name: " + midiName,
+            "Detected channels: " + channels,
+            "",
+            "EXPECTED SOUNDS BY CHANNEL",
+            expectedSounds,
+            "",
+            "STANDARD MIDI DRUM SOUNDS USED",
+            drumSounds,
+            "",
+            "MAXIMUM SIMULTANEOUS VOICES BY CHANNEL",
+            channelPolyphony,
+            "",
+            "Total peak polyphony: " + totalPeakPolyphony
+        ].join("\n");
+    }
+
+    async function copyWithClipboardApi(text) {
         if (!navigator.clipboard || !navigator.clipboard.writeText) {
             return false;
         }
-
-        await navigator.clipboard.writeText(testText);
+        await navigator.clipboard.writeText(text);
         return true;
     }
 
-    function copyWithTextareaFallback() {
+    function copyWithTextareaFallback(text) {
         const textarea = document.createElement("textarea");
-        textarea.value = testText;
+        textarea.value = text;
         textarea.setAttribute("readonly", "");
         textarea.style.position = "fixed";
         textarea.style.left = "-9999px";
@@ -3862,36 +3889,39 @@ loadMidiDirectory();
         textarea.select();
 
         let copied = false;
-
         try {
             copied = document.execCommand("copy");
         } finally {
             document.body.removeChild(textarea);
         }
-
         return copied;
     }
 
     button.addEventListener("click", async function() {
+        if (displayText("expectedSounds") === "-") {
+            status.textContent = "Load and parse a MIDI file first.";
+            return;
+        }
+
+        const text = makeAudioSetupText();
+
         try {
             let copied = false;
-
             try {
-                copied = await copyWithClipboardApi();
+                copied = await copyWithClipboardApi(text);
             } catch (error) {
                 copied = false;
             }
 
             if (!copied) {
-                copied = copyWithTextareaFallback();
+                copied = copyWithTextareaFallback(text);
             }
 
             status.textContent = copied
-                ? "Copied — try pasting into a Patchworld Text block."
+                ? "Audio setup info copied — paste into a Patchworld Text block."
                 : "Copy failed in this browser.";
-
         } catch (error) {
-            console.error("Clipboard test failed:", error);
+            console.error("Audio setup copy failed:", error);
             status.textContent = "Copy failed in this browser.";
         }
     });
