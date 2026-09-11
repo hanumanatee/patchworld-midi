@@ -57,7 +57,7 @@
         <h1>Patchworld MIDI Importer</h1>
         <div id="author">Hanumanatee</div>
     </div>
-    <div id="revision">MIDI5 REV 5</div>
+    <div id="revision">MIDI5 REV 6</div>
 </div>
 
 <div class="layout">
@@ -3829,7 +3829,7 @@ loadMidiDirectory();
 <script>
 // =============================================================
 // =============================================================
-// COPY AUDIO SETUP INFO — MIDI5 REV 5
+// COPY AUDIO SETUP INFO — MIDI5 REV 6
 // Copies the already-parsed channel/instrument information shown
 // in File Information so it can be pasted into a PW Text block.
 // =============================================================
@@ -3843,12 +3843,51 @@ loadMidiDirectory();
         return element ? element.textContent.trim() : "-";
     }
 
+    function formatDrumSoundsForCopy(text) {
+        if (!text || text === "-") {
+            return text || "-";
+        }
+
+        return text
+            .split(/\s*\|\|\s*/ )
+            .map(function(channelText) {
+                const match = channelText.match(/^(Channel\s+\d+):\s*(.*)$/);
+
+                if (!match) {
+                    return channelText.trim();
+                }
+
+                const heading = match[1] + ":";
+                const descriptions = match[2]
+                    .split(/\s*\|\s*/ )
+                    .map(function(item) {
+                        return item.trim();
+                    })
+                    .filter(Boolean);
+
+                const lines = [heading];
+
+                for (let i = 0; i < descriptions.length; i += 4) {
+                    lines.push(
+                        descriptions
+                            .slice(i, i + 4)
+                            .join("   |   ")
+                    );
+                }
+
+                return lines.join("\n");
+            })
+            .join("\n");
+    }
+
     function makeAudioSetupText() {
         const selectedFile = displayText("selectedFile");
         const midiName = displayText("midiName");
         const channels = displayText("channelCount");
         const expectedSounds = displayText("expectedSounds");
-        const drumSounds = displayText("drumSounds");
+        const drumSounds = formatDrumSoundsForCopy(
+            displayText("drumSounds")
+        );
         const channelPolyphony = displayText("channelPolyphony");
         const totalPeakPolyphony = displayText("totalPeakPolyphony");
 
