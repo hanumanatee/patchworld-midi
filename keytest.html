@@ -6,130 +6,464 @@
 <meta name="viewport"
       content="width=device-width, initial-scale=1">
 
-<title>Patchworld Key Test</title>
+<title>Patchworld YouTube Key Test</title>
 
 <style>
-    body {
-        background: #181818;
-        color: #eeeeee;
-        font-family: monospace;
-        padding: 20px;
-        font-size: 16px;
-    }
+body {
+    background: #181818;
+    color: #eeeeee;
+    font-family: monospace;
+    padding: 20px;
+    font-size: 16px;
+}
 
-    h2 {
-        color: #80dfff;
-    }
+h2 { color: #80dfff; }
 
-    #lastKey {
-        background: #303030;
-        border: 1px solid #666;
-        padding: 15px;
-        font-size: 20px;
-        margin-bottom: 15px;
-        white-space: pre-wrap;
-    }
+button, input {
+    font-size: 16px;
+    padding: 10px;
+    margin: 4px;
+}
 
-    #log {
-        background: #101010;
-        border: 1px solid #555;
-        padding: 10px;
-        height: 350px;
-        overflow-y: auto;
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-    }
+input {
+    width: 60%;
+}
 
-    button {
-        font-size: 16px;
-        padding: 10px;
-        margin: 5px 5px 10px 0;
-    }
+#player {
+    width: 100%;
+    max-width: 640px;
+    aspect-ratio: 16 / 9;
+    background: #000;
+}
+
+#lastKey {
+    background: #303030;
+    border: 1px solid #666;
+    padding: 15px;
+    font-size: 18px;
+    white-space: pre-wrap;
+}
+
+#log {
+    background: #101010;
+    border: 1px solid #555;
+    padding: 10px;
+    height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+#status {
+    color: #80ff80;
+    margin: 10px 0;
+}
 </style>
 </head>
 
 <body tabindex="0">
 
-<h2>Patchworld Keyboard Test</h2>
+<h2>Patchworld YouTube Keyboard Test</h2>
 
-<p>Click anywhere on this page to give it focus.</p>
+<p>Enter a YouTube video URL or video ID:</p>
 
-<button id="focusButton">Focus Page</button>
-<button id="clearButton">Clear Log</button>
+<input id="videoInput"
+       value="M7lc1UVf-VE">
 
-<h3>Last Event</h3>
-<div id="lastKey">Waiting for key events...</div>
+<button onclick="loadVideo()">Load Video</button>
+
+<br><br>
+
+<div id="player"></div>
+
+<div id="status">Loading YouTube API...</div>
+
+<br>
+
+<button onclick="playVideo()">Play</button>
+<button onclick="pauseVideo()">Pause</button>
+<button onclick="toggleVideo()">Toggle</button>
+
+<br><br>
+
+<button onclick="focusPage()">Focus Page</button>
+<button onclick="clearLog()">Clear Log</button>
+
+<h3>Last Keyboard Event</h3>
+
+<div id="lastKey">
+Waiting for keyboard events...
+</div>
 
 <h3>Event Log</h3>
+
 <div id="log"></div>
 
 <script>
 
-const lastKey = document.getElementById("lastKey");
-const log = document.getElementById("log");
-
+let player = null;
+let playerReady = false;
 let count = 0;
 
+const lastKey = document.getElementById("lastKey");
+const log = document.getElementById("log");
+const status = document.getElementById("status");
+
+
+// --------------------------------------------------
+// Logging
+// --------------------------------------------------
+
 function addLog(message) {
+
     const time = new Date().toLocaleTimeString();
 
     const line = time + "  " + message;
 
     log.textContent += line + "\n";
+
     log.scrollTop = log.scrollHeight;
 
-    // Also send to the browser's JavaScript console.
     console.log(line);
 }
+
+
+// --------------------------------------------------
+// Keyboard event capture
+// --------------------------------------------------
 
 function handleKey(event) {
 
     count++;
 
     const info = {
+
         number: count,
+
         type: event.type,
+
         key: event.key,
+
+        keyLength: event.key.length,
+
+        keyCharCode:
+            event.key.length
+            ? event.key.charCodeAt(0)
+            : null,
+
         code: event.code,
+
         keyCode: event.keyCode,
+
         repeat: event.repeat,
-        ctrl: event.ctrlKey,
-        alt: event.altKey,
-        shift: event.shiftKey,
-        meta: event.metaKey,
+
         trusted: event.isTrusted,
+
         target: event.target.tagName
+
     };
 
-    const message = JSON.stringify(info, null, 2);
-
-    lastKey.textContent = message;
+    lastKey.textContent =
+        JSON.stringify(info, null, 2);
 
     addLog(JSON.stringify(info));
 
+    // Diagnostic: k toggles playback when received
+    // by the outer page.
+
+    if (event.type === "keydown" &&
+        !event.repeat &&
+        event.key.toLowerCase() === "k") {
+
+        addLog("Outer page received K");
+
+        toggleVideo();
+    }
+
 }
 
-// Capture events at the window level.
-window.addEventListener("keydown", handleKey, true);
-window.addEventListener("keyup", handleKey, true);
+window.addEventListener(
+    "keydown", handleKey, true
+);
 
-// Focus button.
-document.getElementById("focusButton")
-    .addEventListener("click", function() {
-        document.body.focus();
-        addLog("Page focused");
+window.addEventListener(
+    "keyup", handleKey, true
+);
+
+
+// --------------------------------------------------
+// Focus controls
+// --------------------------------------------------
+
+function focusPage() {
+
+    document.body.focus();
+
+    addLog("Outer page focused");
+}
+
+function clearLog() {
+
+    log.textContent = "";
+
+    count = 0;
+
+    lastKey.textContent =
+        "Waiting for keyboard events...";
+
+    document.body.focus();
+}
+
+
+// --------------------------------------------------
+// YouTube video ID extraction
+// --------------------------------------------------
+
+function getVideoId(value) {
+
+    value = value.trim();
+
+    // Accept a plain 11-character video ID.
+
+    if (/^[a-zA-Z0-9_-]{11}$/.test(value)) {
+        return value;
+    }
+
+    try {
+
+        const url = new URL(value);
+
+        if (url.hostname.includes("youtu.be")) {
+
+            return url.pathname.split("/")[1];
+
+        }
+
+        if (url.hostname.includes("youtube.com")) {
+
+            if (url.pathname.startsWith("/shorts/")) {
+                return url.pathname.split("/")[2];
+            }
+
+            if (url.pathname.startsWith("/embed/")) {
+                return url.pathname.split("/")[2];
+            }
+
+            return url.searchParams.get("v");
+
+        }
+
+    } catch (e) {
+
+        addLog("Invalid video URL");
+
+    }
+
+    return null;
+}
+
+
+// --------------------------------------------------
+// YouTube IFrame API
+// --------------------------------------------------
+
+function onYouTubeIframeAPIReady() {
+
+    addLog("YouTube API loaded");
+
+    const videoId = getVideoId(
+        document.getElementById("videoInput").value
+    );
+
+    player = new YT.Player("player", {
+
+        width: "640",
+
+        height: "360",
+
+        videoId: videoId,
+
+        playerVars: {
+
+            playsinline: 1,
+
+            controls: 1,
+
+            enablejsapi: 1
+
+        },
+
+        events: {
+
+            onReady: onPlayerReady,
+
+            onStateChange: onPlayerStateChange,
+
+            onError: onPlayerError
+
+        }
+
     });
 
-// Clear button.
-document.getElementById("clearButton")
-    .addEventListener("click", function() {
-        log.textContent = "";
-        count = 0;
-        lastKey.textContent = "Waiting for key events...";
-        document.body.focus();
-    });
+}
 
-// Initial message.
+
+function onPlayerReady(event) {
+
+    playerReady = true;
+
+    status.textContent = "YouTube player ready";
+
+    addLog("YouTube player ready");
+
+}
+
+
+function onPlayerStateChange(event) {
+
+    const states = {
+
+        "-1": "Unstarted",
+
+        "0": "Ended",
+
+        "1": "Playing",
+
+        "2": "Paused",
+
+        "3": "Buffering",
+
+        "5": "Video cued"
+
+    };
+
+    const state =
+        states[event.data] || "Unknown";
+
+    status.textContent =
+        "Player state: " + state;
+
+    addLog("Player state: " + state);
+
+}
+
+
+function onPlayerError(event) {
+
+    addLog(
+        "YouTube error: " + event.data
+    );
+
+    status.textContent =
+        "YouTube error: " + event.data;
+
+}
+
+
+// --------------------------------------------------
+// Playback controls
+// --------------------------------------------------
+
+function playVideo() {
+
+    if (!playerReady) {
+        addLog("Player not ready");
+        return;
+    }
+
+    addLog("API command: PLAY");
+
+    player.playVideo();
+
+}
+
+
+function pauseVideo() {
+
+    if (!playerReady) {
+        addLog("Player not ready");
+        return;
+    }
+
+    addLog("API command: PAUSE");
+
+    player.pauseVideo();
+
+}
+
+
+function toggleVideo() {
+
+    if (!playerReady) {
+        addLog("Player not ready");
+        return;
+    }
+
+    const state = player.getPlayerState();
+
+    if (state === YT.PlayerState.PLAYING) {
+
+        pauseVideo();
+
+    } else {
+
+        playVideo();
+
+    }
+
+}
+
+
+// --------------------------------------------------
+// Load another video
+// --------------------------------------------------
+
+function loadVideo() {
+
+    const value =
+        document.getElementById("videoInput").value;
+
+    const videoId = getVideoId(value);
+
+    if (!videoId) {
+
+        addLog("Invalid YouTube video ID");
+
+        return;
+
+    }
+
+    if (!playerReady) {
+
+        addLog("Player not ready");
+
+        return;
+
+    }
+
+    addLog("Loading video: " + videoId);
+
+    player.cueVideoById(videoId);
+
+}
+
+
+// --------------------------------------------------
+// Load YouTube API
+// --------------------------------------------------
+
+const tag = document.createElement("script");
+
+tag.src =
+    "https://www.youtube.com/iframe_api";
+
+document.head.appendChild(tag);
+
+
+// --------------------------------------------------
+// Initial state
+// --------------------------------------------------
+
 addLog("Keyboard test ready");
 
 document.body.focus();
