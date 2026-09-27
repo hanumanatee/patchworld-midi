@@ -1,0 +1,297 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Patchworld YouTube Player</title>
+
+<style>
+body {
+    background: #181818;
+    color: #eeeeee;
+    font-family: monospace;
+    padding: 20px;
+    font-size: 16px;
+}
+
+h2 { color: #80dfff; }
+
+#player {
+    width: 100%;
+    max-width: 640px;
+    aspect-ratio: 16 / 9;
+    background: black;
+}
+
+#status {
+    background: #303030;
+    border: 1px solid #666;
+    padding: 15px;
+    margin: 15px 0;
+    font-size: 18px;
+}
+
+#log {
+    background: #101010;
+    border: 1px solid #555;
+    padding: 10px;
+    height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+button {
+    font-size: 16px;
+    padding: 10px;
+    margin: 5px;
+}
+</style>
+
+<script src="patchworld-bridge.js"></script>
+
+</head>
+
+<body>
+
+<h2>Patchworld YouTube Player</h2>
+
+<div id="player"></div>
+
+<div id="status">Initializing...</div>
+
+<button onclick="playVideo()">Play</button>
+<button onclick="pauseVideo()">Pause</button>
+
+<h3>Event Log</h3>
+
+<div id="log"></div>
+
+<script>
+
+// ---------------------------------------------
+// Configuration
+// ---------------------------------------------
+
+const VIDEO_ID = "M7lc1UVf-VE";
+const PLAY_CHANNEL = "Play";
+
+// ---------------------------------------------
+// State
+// ---------------------------------------------
+
+let player = null;
+let playerReady = false;
+let pendingPlay = false;
+
+const status = document.getElementById("status");
+const log = document.getElementById("log");
+
+// ---------------------------------------------
+// Logging
+// ---------------------------------------------
+
+function addLog(message) {
+
+    const time = new Date().toLocaleTimeString();
+    const line = time + "  " + message;
+
+    log.textContent += line + "\n";
+    log.scrollTop = log.scrollHeight;
+
+    console.log(line);
+}
+
+// ---------------------------------------------
+// Playback
+// ---------------------------------------------
+
+function playVideo() {
+
+    if (!playerReady) {
+
+        pendingPlay = true;
+
+        addLog("Play requested - waiting for player");
+
+        return;
+    }
+
+    pendingPlay = false;
+
+    addLog("API command: PLAY");
+
+    player.playVideo();
+}
+
+function pauseVideo() {
+
+    if (!playerReady) return;
+
+    addLog("API command: PAUSE");
+
+    player.pauseVideo();
+}
+
+// ---------------------------------------------
+// Patchworld Web Bridge
+// ---------------------------------------------
+
+PatchWorld.onData = async function(context) {
+
+    addLog("Patchworld bridge connected");
+
+    try {
+
+        await PatchWorld.subscribeWifi(PLAY_CHANNEL);
+
+        addLog(
+            "Subscribed to wireless: " + PLAY_CHANNEL
+        );
+
+        status.textContent =
+            "Bridge connected - waiting for Play";
+
+    } catch (error) {
+
+        addLog("Subscription error: " + error);
+    }
+};
+
+// ---------------------------------------------
+// Receive wireless jolts
+// ---------------------------------------------
+
+PatchWorld.onWifiJolt = function(channel, value) {
+
+    addLog(
+        "Wireless received: " +
+        channel + " = " + value
+    );
+
+    if (channel === PLAY_CHANNEL) {
+
+        addLog("PLAY JOLT RECEIVED");
+
+        playVideo();
+    }
+};
+
+// ---------------------------------------------
+// YouTube API initialization
+// ---------------------------------------------
+
+function onYouTubeIframeAPIReady() {
+
+    addLog("YouTube API loaded");
+
+    player = new YT.Player("player", {
+
+        width: "640",
+        height: "360",
+
+        videoId: VIDEO_ID,
+
+        playerVars: {
+            autoplay: 0,
+            playsinline: 1,
+            controls: 1,
+            enablejsapi: 1
+        },
+
+        events: {
+            onReady: onPlayerReady,
+            onStateChange: onPlayerStateChange,
+            onError: onPlayerError,
+            onAutoplayBlocked: onAutoplayBlocked
+        }
+    });
+}
+
+// ---------------------------------------------
+// Player ready
+// ---------------------------------------------
+
+function onPlayerReady(event) {
+
+    playerReady = true;
+
+    addLog("YouTube player ready");
+
+    status.textContent =
+        "Player ready - waiting for Play";
+
+    if (pendingPlay) {
+
+        addLog("Executing pending Play request");
+
+        playVideo();
+    }
+}
+
+// ---------------------------------------------
+// Player state
+// ---------------------------------------------
+
+function onPlayerStateChange(event) {
+
+    const states = {
+        "-1": "Unstarted",
+        "0": "Ended",
+        "1": "Playing",
+        "2": "Paused",
+        "3": "Buffering",
+        "5": "Video cued"
+    };
+
+    const state = states[event.data] || "Unknown";
+
+    addLog("Player state: " + state);
+
+    status.textContent =
+        "Player state: " + state;
+}
+
+// ---------------------------------------------
+// Autoplay blocked
+// ---------------------------------------------
+
+function onAutoplayBlocked(event) {
+
+    addLog("AUTOPLAY BLOCKED");
+
+    status.textContent =
+        "AUTOPLAY BLOCKED BY BROWSER";
+}
+
+// ---------------------------------------------
+// Player error
+// ---------------------------------------------
+
+function onPlayerError(event) {
+
+    addLog("YouTube error: " + event.data);
+
+    status.textContent =
+        "YouTube error: " + event.data;
+}
+
+// ---------------------------------------------
+// Load YouTube API
+// ---------------------------------------------
+
+const tag = document.createElement("script");
+
+tag.src = "https://www.youtube.com/iframe_api";
+
+document.head.appendChild(tag);
+
+addLog("Page initialized");
+
+</script>
+
+</body>
+</html>
