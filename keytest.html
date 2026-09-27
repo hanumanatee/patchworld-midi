@@ -1,0 +1,140 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1">
+
+<title>Patchworld Key Test</title>
+
+<style>
+    body {
+        background: #181818;
+        color: #eeeeee;
+        font-family: monospace;
+        padding: 20px;
+        font-size: 16px;
+    }
+
+    h2 {
+        color: #80dfff;
+    }
+
+    #lastKey {
+        background: #303030;
+        border: 1px solid #666;
+        padding: 15px;
+        font-size: 20px;
+        margin-bottom: 15px;
+        white-space: pre-wrap;
+    }
+
+    #log {
+        background: #101010;
+        border: 1px solid #555;
+        padding: 10px;
+        height: 350px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+
+    button {
+        font-size: 16px;
+        padding: 10px;
+        margin: 5px 5px 10px 0;
+    }
+</style>
+</head>
+
+<body tabindex="0">
+
+<h2>Patchworld Keyboard Test</h2>
+
+<p>Click anywhere on this page to give it focus.</p>
+
+<button id="focusButton">Focus Page</button>
+<button id="clearButton">Clear Log</button>
+
+<h3>Last Event</h3>
+<div id="lastKey">Waiting for key events...</div>
+
+<h3>Event Log</h3>
+<div id="log"></div>
+
+<script>
+
+const lastKey = document.getElementById("lastKey");
+const log = document.getElementById("log");
+
+let count = 0;
+
+function addLog(message) {
+    const time = new Date().toLocaleTimeString();
+
+    const line = time + "  " + message;
+
+    log.textContent += line + "\n";
+    log.scrollTop = log.scrollHeight;
+
+    // Also send to the browser's JavaScript console.
+    console.log(line);
+}
+
+function handleKey(event) {
+
+    count++;
+
+    const info = {
+        number: count,
+        type: event.type,
+        key: event.key,
+        code: event.code,
+        keyCode: event.keyCode,
+        repeat: event.repeat,
+        ctrl: event.ctrlKey,
+        alt: event.altKey,
+        shift: event.shiftKey,
+        meta: event.metaKey,
+        trusted: event.isTrusted,
+        target: event.target.tagName
+    };
+
+    const message = JSON.stringify(info, null, 2);
+
+    lastKey.textContent = message;
+
+    addLog(JSON.stringify(info));
+
+}
+
+// Capture events at the window level.
+window.addEventListener("keydown", handleKey, true);
+window.addEventListener("keyup", handleKey, true);
+
+// Focus button.
+document.getElementById("focusButton")
+    .addEventListener("click", function() {
+        document.body.focus();
+        addLog("Page focused");
+    });
+
+// Clear button.
+document.getElementById("clearButton")
+    .addEventListener("click", function() {
+        log.textContent = "";
+        count = 0;
+        lastKey.textContent = "Waiting for key events...";
+        document.body.focus();
+    });
+
+// Initial message.
+addLog("Keyboard test ready");
+
+document.body.focus();
+
+</script>
+
+</body>
+</html>
