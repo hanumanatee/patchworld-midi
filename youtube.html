@@ -6,7 +6,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>Patchworld YouTube Muted Autoplay Test</title>
+<title>Patchworld YouTube Wireless Test</title>
 
 <style>
 body {
@@ -57,7 +57,7 @@ button {
 
 <body>
 
-<h2>Patchworld YouTube Muted Autoplay Test</h2>
+<h2>Patchworld YouTube Wireless Test</h2>
 
 <div id="player"></div>
 
@@ -66,7 +66,7 @@ button {
 <button onclick="startMuted()">Start Muted</button>
 <button onclick="attemptUnmute()">Unmute</button>
 <button onclick="pauseVideo()">Pause</button>
-<button onclick="checkMute()">Check Mute</button>
+<button onclick="checkState()">Check State</button>
 
 <h3>Event Log</h3>
 
@@ -79,7 +79,9 @@ button {
 // ---------------------------------------------
 
 const VIDEO_ID = "M7lc1UVf-VE";
+
 const PLAY_CHANNEL = "Play";
+const UNMUTE_CHANNEL = "Unmute";
 
 // ---------------------------------------------
 // State
@@ -88,7 +90,6 @@ const PLAY_CHANNEL = "Play";
 let player = null;
 let playerReady = false;
 let pendingPlay = false;
-let unmuteAttempted = false;
 
 const status = document.getElementById("status");
 const log = document.getElementById("log");
@@ -109,28 +110,40 @@ function addLog(message) {
 }
 
 // ---------------------------------------------
-// Check mute state
+// Check player state
 // ---------------------------------------------
 
-function checkMute() {
+function checkState() {
 
     if (!playerReady) return;
 
+    const state = player.getPlayerState();
     const muted = player.isMuted();
     const volume = player.getVolume();
 
-    addLog(
-        "Mute state: " + muted +
-        " | Volume: " + volume
-    );
+    const states = {
+        "-1": "Unstarted",
+        "0": "Ended",
+        "1": "Playing",
+        "2": "Paused",
+        "3": "Buffering",
+        "5": "Video cued"
+    };
 
-    status.textContent =
-        "Muted: " + muted +
+    const stateName = states[state] || "Unknown";
+
+    const message =
+        "State: " + stateName +
+        " | Muted: " + muted +
         " | Volume: " + volume;
+
+    addLog(message);
+
+    status.textContent = message;
 }
 
 // ---------------------------------------------
-// Start playback muted
+// Start muted playback
 // ---------------------------------------------
 
 function startMuted() {
@@ -145,7 +158,6 @@ function startMuted() {
     }
 
     pendingPlay = false;
-    unmuteAttempted = false;
 
     addLog("Muting player");
 
@@ -157,28 +169,34 @@ function startMuted() {
 }
 
 // ---------------------------------------------
-// Attempt automatic unmute
+// Unmute
 // ---------------------------------------------
 
 function attemptUnmute() {
 
-    if (!playerReady) return;
+    if (!playerReady) {
 
-    addLog("Attempting UNMUTE");
+        addLog("Unmute ignored - player not ready");
+
+        return;
+    }
+
+    addLog("UNMUTE REQUEST RECEIVED");
+
+    addLog("State before unmute:");
+    checkState();
 
     player.setVolume(100);
     player.unMute();
 
-    // Check immediately.
-    checkMute();
+    addLog("Unmute command issued");
 
-    // Check again after the browser processes
-    // the unmute request.
+    // Allow the browser to process the command.
+
     setTimeout(function() {
 
-        addLog("Delayed mute-state check");
-
-        checkMute();
+        addLog("State after unmute:");
+        checkState();
 
     }, 1000);
 }
@@ -213,6 +231,13 @@ PatchWorld.onData = async function(context) {
             PLAY_CHANNEL
         );
 
+        await PatchWorld.subscribeWifi(UNMUTE_CHANNEL);
+
+        addLog(
+            "Subscribed to wireless: " +
+            UNMUTE_CHANNEL
+        );
+
         status.textContent =
             "Bridge connected - waiting for Play";
 
@@ -223,7 +248,7 @@ PatchWorld.onData = async function(context) {
 };
 
 // ---------------------------------------------
-// Wireless Play jolt
+// Wireless jolts
 // ---------------------------------------------
 
 PatchWorld.onWifiJolt = function(channel, value) {
@@ -239,10 +264,17 @@ PatchWorld.onWifiJolt = function(channel, value) {
 
         startMuted();
     }
+
+    if (channel === UNMUTE_CHANNEL) {
+
+        addLog("UNMUTE JOLT RECEIVED");
+
+        attemptUnmute();
+    }
 };
 
 // ---------------------------------------------
-// YouTube API initialization
+// YouTube API
 // ---------------------------------------------
 
 function onYouTubeIframeAPIReady() {
@@ -280,10 +312,9 @@ function onPlayerReady(event) {
 
     playerReady = true;
 
-    addLog("YouTube player ready");
-
-    // Establish muted state before playback.
     player.mute();
+
+    addLog("YouTube player ready");
 
     status.textContent =
         "Player ready - waiting for Play";
@@ -318,26 +349,11 @@ function onPlayerStateChange(event) {
     status.textContent =
         "Player state: " + state;
 
-    if (
-        event.data === YT.PlayerState.PLAYING &&
-        !unmuteAttempted
-    ) {
+    if (event.data === YT.PlayerState.PLAYING) {
 
-        unmuteAttempted = true;
+        addLog("Playback confirmed");
 
-        addLog("Muted playback succeeded");
-
-        checkMute();
-
-        // Allow playback to establish itself
-        // before attempting to enable audio.
-        setTimeout(function() {
-
-            addLog("Automatic unmute test");
-
-            attemptUnmute();
-
-        }, 1500);
+        checkState();
     }
 }
 
@@ -373,12 +389,7 @@ window.addEventListener("keydown", function(event) {
 
     addLog("Key: " + JSON.stringify(event.key));
 
-    if (
-        event.key.toLowerCase() === "k" &&
-        !event.repeat
-    ) {
-
-        addLog("K received - starting muted");
+    if (event.key === "k" && !event.repeat) {
 
         startMuted();
     }
@@ -395,7 +406,7 @@ tag.src = "https://www.youtube.com/iframe_api";
 
 document.head.appendChild(tag);
 
-addLog("Muted autoplay test initialized");
+addLog("Wireless playback test initialized");
 
 </script>
 
