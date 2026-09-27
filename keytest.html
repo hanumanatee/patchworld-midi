@@ -6,7 +6,7 @@
 <meta name="viewport"
       content="width=device-width, initial-scale=1">
 
-<title>Patchworld YouTube Key Test</title>
+<title>Patchworld YouTube Autoplay Test</title>
 
 <style>
 body {
@@ -17,7 +17,9 @@ body {
     font-size: 16px;
 }
 
-h2 { color: #80dfff; }
+h2 {
+    color: #80dfff;
+}
 
 button, input {
     font-size: 16px;
@@ -33,15 +35,15 @@ input {
     width: 100%;
     max-width: 640px;
     aspect-ratio: 16 / 9;
-    background: #000;
+    background: black;
 }
 
-#lastKey {
+#status {
     background: #303030;
     border: 1px solid #666;
     padding: 15px;
     font-size: 18px;
-    white-space: pre-wrap;
+    margin: 15px 0;
 }
 
 #log {
@@ -53,19 +55,14 @@ input {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
-
-#status {
-    color: #80ff80;
-    margin: 10px 0;
-}
 </style>
 </head>
 
 <body tabindex="0">
 
-<h2>Patchworld YouTube Keyboard Test</h2>
+<h2>Patchworld YouTube Autoplay Test</h2>
 
-<p>Enter a YouTube video URL or video ID:</p>
+<p>YouTube video URL or ID:</p>
 
 <input id="videoInput"
        value="M7lc1UVf-VE">
@@ -76,24 +73,15 @@ input {
 
 <div id="player"></div>
 
-<div id="status">Loading YouTube API...</div>
-
-<br>
+<div id="status">
+    Initializing YouTube player...
+</div>
 
 <button onclick="playVideo()">Play</button>
 <button onclick="pauseVideo()">Pause</button>
 <button onclick="toggleVideo()">Toggle</button>
 
-<br><br>
-
 <button onclick="focusPage()">Focus Page</button>
-<button onclick="clearLog()">Clear Log</button>
-
-<h3>Last Keyboard Event</h3>
-
-<div id="lastKey">
-Waiting for keyboard events...
-</div>
 
 <h3>Event Log</h3>
 
@@ -103,16 +91,15 @@ Waiting for keyboard events...
 
 let player = null;
 let playerReady = false;
-let count = 0;
+let autoplayBlocked = false;
 
-const lastKey = document.getElementById("lastKey");
-const log = document.getElementById("log");
 const status = document.getElementById("status");
+const log = document.getElementById("log");
 
 
-// --------------------------------------------------
+// -----------------------------------------------
 // Logging
-// --------------------------------------------------
+// -----------------------------------------------
 
 function addLog(message) {
 
@@ -128,102 +115,13 @@ function addLog(message) {
 }
 
 
-// --------------------------------------------------
-// Keyboard event capture
-// --------------------------------------------------
-
-function handleKey(event) {
-
-    count++;
-
-    const info = {
-
-        number: count,
-
-        type: event.type,
-
-        key: event.key,
-
-        keyLength: event.key.length,
-
-        keyCharCode:
-            event.key.length
-            ? event.key.charCodeAt(0)
-            : null,
-
-        code: event.code,
-
-        keyCode: event.keyCode,
-
-        repeat: event.repeat,
-
-        trusted: event.isTrusted,
-
-        target: event.target.tagName
-
-    };
-
-    lastKey.textContent =
-        JSON.stringify(info, null, 2);
-
-    addLog(JSON.stringify(info));
-
-    // Diagnostic: k toggles playback when received
-    // by the outer page.
-
-    if (event.type === "keydown" &&
-        !event.repeat &&
-        event.key.toLowerCase() === "k") {
-
-        addLog("Outer page received K");
-
-        toggleVideo();
-    }
-
-}
-
-window.addEventListener(
-    "keydown", handleKey, true
-);
-
-window.addEventListener(
-    "keyup", handleKey, true
-);
-
-
-// --------------------------------------------------
-// Focus controls
-// --------------------------------------------------
-
-function focusPage() {
-
-    document.body.focus();
-
-    addLog("Outer page focused");
-}
-
-function clearLog() {
-
-    log.textContent = "";
-
-    count = 0;
-
-    lastKey.textContent =
-        "Waiting for keyboard events...";
-
-    document.body.focus();
-}
-
-
-// --------------------------------------------------
-// YouTube video ID extraction
-// --------------------------------------------------
+// -----------------------------------------------
+// Video ID extraction
+// -----------------------------------------------
 
 function getVideoId(value) {
 
     value = value.trim();
-
-    // Accept a plain 11-character video ID.
 
     if (/^[a-zA-Z0-9_-]{11}$/.test(value)) {
         return value;
@@ -234,9 +132,7 @@ function getVideoId(value) {
         const url = new URL(value);
 
         if (url.hostname.includes("youtu.be")) {
-
             return url.pathname.split("/")[1];
-
         }
 
         if (url.hostname.includes("youtube.com")) {
@@ -250,7 +146,6 @@ function getVideoId(value) {
             }
 
             return url.searchParams.get("v");
-
         }
 
     } catch (e) {
@@ -263,9 +158,9 @@ function getVideoId(value) {
 }
 
 
-// --------------------------------------------------
-// YouTube IFrame API
-// --------------------------------------------------
+// -----------------------------------------------
+// YouTube API
+// -----------------------------------------------
 
 function onYouTubeIframeAPIReady() {
 
@@ -285,6 +180,10 @@ function onYouTubeIframeAPIReady() {
 
         playerVars: {
 
+            autoplay: 1,
+
+            mute: 0,
+
             playsinline: 1,
 
             controls: 1,
@@ -299,7 +198,9 @@ function onYouTubeIframeAPIReady() {
 
             onStateChange: onPlayerStateChange,
 
-            onError: onPlayerError
+            onError: onPlayerError,
+
+            onAutoplayBlocked: onAutoplayBlocked
 
         }
 
@@ -308,16 +209,51 @@ function onYouTubeIframeAPIReady() {
 }
 
 
+// -----------------------------------------------
+// Player ready
+// -----------------------------------------------
+
 function onPlayerReady(event) {
 
     playerReady = true;
 
-    status.textContent = "YouTube player ready";
+    addLog("Player ready");
 
-    addLog("YouTube player ready");
+    // Explicitly request audible playback.
+
+    player.unMute();
+
+    player.setVolume(100);
+
+    addLog("Requesting autoplay with sound");
+
+    player.playVideo();
+
+    status.textContent =
+        "Autoplay requested. Waiting for result...";
 
 }
 
+
+// -----------------------------------------------
+// Autoplay blocked
+// -----------------------------------------------
+
+function onAutoplayBlocked(event) {
+
+    autoplayBlocked = true;
+
+    status.textContent =
+        "AUTOPLAY BLOCKED BY BROWSER";
+
+    addLog("AUTOPLAY BLOCKED");
+
+}
+
+
+// -----------------------------------------------
+// Player state changes
+// -----------------------------------------------
 
 function onPlayerStateChange(event) {
 
@@ -340,19 +276,39 @@ function onPlayerStateChange(event) {
     const state =
         states[event.data] || "Unknown";
 
-    status.textContent =
-        "Player state: " + state;
-
     addLog("Player state: " + state);
+
+    if (event.data === YT.PlayerState.PLAYING) {
+
+        status.textContent =
+            "PLAYING - Autoplay succeeded";
+
+        addLog("Playback started");
+
+    } else if (
+        event.data === YT.PlayerState.PAUSED
+    ) {
+
+        status.textContent = "Paused";
+
+    } else if (
+        event.data === YT.PlayerState.BUFFERING
+    ) {
+
+        status.textContent = "Buffering...";
+
+    }
 
 }
 
 
+// -----------------------------------------------
+// Player errors
+// -----------------------------------------------
+
 function onPlayerError(event) {
 
-    addLog(
-        "YouTube error: " + event.data
-    );
+    addLog("YouTube error: " + event.data);
 
     status.textContent =
         "YouTube error: " + event.data;
@@ -360,9 +316,9 @@ function onPlayerError(event) {
 }
 
 
-// --------------------------------------------------
-// Playback controls
-// --------------------------------------------------
+// -----------------------------------------------
+// Manual playback controls
+// -----------------------------------------------
 
 function playVideo() {
 
@@ -371,7 +327,7 @@ function playVideo() {
         return;
     }
 
-    addLog("API command: PLAY");
+    addLog("Manual PLAY");
 
     player.playVideo();
 
@@ -385,7 +341,7 @@ function pauseVideo() {
         return;
     }
 
-    addLog("API command: PAUSE");
+    addLog("Manual PAUSE");
 
     player.pauseVideo();
 
@@ -399,9 +355,10 @@ function toggleVideo() {
         return;
     }
 
-    const state = player.getPlayerState();
-
-    if (state === YT.PlayerState.PLAYING) {
+    if (
+        player.getPlayerState() ===
+        YT.PlayerState.PLAYING
+    ) {
 
         pauseVideo();
 
@@ -414,43 +371,67 @@ function toggleVideo() {
 }
 
 
-// --------------------------------------------------
+// -----------------------------------------------
 // Load another video
-// --------------------------------------------------
+// -----------------------------------------------
 
 function loadVideo() {
 
-    const value =
-        document.getElementById("videoInput").value;
-
-    const videoId = getVideoId(value);
+    const videoId = getVideoId(
+        document.getElementById("videoInput").value
+    );
 
     if (!videoId) {
-
-        addLog("Invalid YouTube video ID");
-
+        addLog("Invalid video ID");
         return;
-
     }
 
     if (!playerReady) {
-
         addLog("Player not ready");
-
         return;
-
     }
 
     addLog("Loading video: " + videoId);
 
-    player.cueVideoById(videoId);
+    player.loadVideoById(videoId);
 
 }
 
 
-// --------------------------------------------------
+// -----------------------------------------------
+// Keyboard support
+// -----------------------------------------------
+
+function focusPage() {
+
+    document.body.focus();
+
+    addLog("Page focused");
+
+}
+
+
+window.addEventListener("keydown", function(event) {
+
+    addLog(
+        "Key: " + JSON.stringify(event.key)
+    );
+
+    if (
+        event.key.toLowerCase() === "k" &&
+        !event.repeat
+    ) {
+
+        toggleVideo();
+
+    }
+
+}, true);
+
+
+// -----------------------------------------------
 // Load YouTube API
-// --------------------------------------------------
+// -----------------------------------------------
 
 const tag = document.createElement("script");
 
@@ -459,12 +440,7 @@ tag.src =
 
 document.head.appendChild(tag);
 
-
-// --------------------------------------------------
-// Initial state
-// --------------------------------------------------
-
-addLog("Keyboard test ready");
+addLog("Autoplay test initialized");
 
 document.body.focus();
 
